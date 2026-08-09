@@ -25,3 +25,6 @@ replay_pid*
 
 # MySQL secrets (copy from *.example)
 deploy/k3s/mysql/mysql-secret.yaml
+
+# Local scratch (not for the team)
+only-for-me/
