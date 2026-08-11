@@ -52,13 +52,13 @@ Process path is **not** in the body — inherit via WO → `wo_pp_binding`.
 | Status | When |
 |--------|------|
 | `400` | Missing / blank `panelNumber` or `workOrderId` |
-| `404` | Work order not found — either it was never path-assigned (`wo_pp_binding`), **or** it disappeared after the pre-check and the insert failed the FK (`work_order_id`). Service re-reads the WO to decide this after a DB integrity error. |
-| `409` | Panel already registered — either the soft pre-check found it, **or** a concurrent request won the race and `UNIQUE(panel_number)` rejected the insert (typical double-submit). Service re-reads the panel to decide this after a DB integrity error. Also used for any other unexpected integrity conflict (still not a bare 500). |
+| `404` | Work order not found on soft check — never path-assigned (`wo_pp_binding`) |
+| `409` | Panel already registered (soft check), **or** insert hit a DB integrity race (`UNIQUE(panel_number)` double-submit, or WO gone after soft check / other integrity conflict). No bare 500 for those races. |
 
-Both UNIQUE and FK failures arrive as the same Spring `DataIntegrityViolationException`; the service does **not** parse MySQL constraint names — it re-checks panel / WO rows (rare path, cheap).
+Soft checks cover the normal path. On `DataIntegrityViolationException` after `save`, the service maps to **409** and does **not** re-query in the same transaction (failed INSERT can leave the JPA session unusable). Distinguishing FK-vs-UNIQUE on that rare path is out of stage 1.
 
 ## Persist
 
-Insert into `wo_management` (`panel_number`, `work_order_id`, `registered_at`).
+Insert into `panel_registration` (`panel_number`, `work_order_id`, `registered_at`).
 
-Schema (V4): `UNIQUE(panel_number)`; `FOREIGN KEY (work_order_id) REFERENCES wo_pp_binding (work_order_id)`.
+Schema: `UNIQUE(panel_number)`; `FOREIGN KEY (work_order_id) REFERENCES wo_pp_binding (work_order_id)` (V4); table renamed from `wo_management` (V5).

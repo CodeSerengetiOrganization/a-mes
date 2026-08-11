@@ -1,0 +1,29 @@
+---
+description: Keep packages, APIs, tables, entities, and docs aligned with plant language — name the surface once
+globs: "**/db/migration/**/*.sql,**/docs/schema.md,**/docs/api/**/*.md,**/panelregistration/**/*.java,**/*Entity.java,**/*Controller.java,**/*Service.java,**/*Request.java,**/*Response.java"
+alwaysApply: false
+---
+
+# Plant-language naming (full surface — pay once)
+
+Before the first migration **and** the first feature package / API:
+
+1. Lock the **plant noun** operators/quality use (e.g. Panel Registration, process path, work order).
+2. Align the **whole surface** to that noun — or keep names recognizably close. Do not invent a parallel vocab (ERP “management”, vague “data”, demo placeholders).
+
+| Layer | Prefer aligned / close | Avoid |
+|-------|------------------------|--------|
+| Story / ticket / docs | Panel Registration | WO management, data entry |
+| Package / feature folder | `panelregistration` | `womanagement`, `datamgmt` |
+| API path + resource | `/api/panel-registrations` | `/api/wo-management` |
+| Request / response / service | `PanelRegistration*` | `WoManagement*` |
+| Table + columns | `panel_registration`, `panel_number`, … | `wo_management`, vague `mgmt_*` |
+| JPA entity `@Table` | matches table / plant noun | entity plant-ish, table ERP-ish (drift) |
+
+**Rule of thumb:** a plant PM reading the URL, class name, or table name should recognize the same process. Slight abbreviation (`panelregistration` package) is fine; **far-away** names are not.
+
+**Historical note:** `wo_management` was renamed to `panel_registration` in Flyway V5 — keep new surfaces aligned from day one.
+
+When reviewing: if **any** layer would confuse a plant PM relative to the others, **stop and align before merge** — do not “fix later.”
+
+Personas: Kai, Robert, Elon (`project-vector/.cursor/personas/`).

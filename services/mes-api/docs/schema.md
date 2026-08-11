@@ -2,7 +2,7 @@
 
 **Type:** Human-readable picture for onboarding — **not** applied by Flyway  
 **SoT for DDL:** `src/main/resources/db/migration/V*.sql` (run by Spring Boot)  
-**As of:** V4 (2026-08-10)  
+**As of:** V5 (2026-08-10)  
 **Audience:** new engineers · Maya / Sam · reviewers
 
 If this note disagrees with a migration, **trust the migration** and update this file.
@@ -21,7 +21,7 @@ Flyway `V1`…`Vn` is the path the database took. New readers should not have to
 |------|----------------|
 | Three approved process paths (`pp_*`) | `process_path` (seeded AS-1) |
 | One work order → exactly one process path | `wo_pp_binding` PK = `work_order_id` |
-| Panel joins a work order at **Panel Registration** | `wo_management` |
+| Panel joins a work order at **Panel Registration** | `panel_registration` |
 | One panel → one work order | `UNIQUE(panel_number)` (V4) |
 | Panel’s WO must already have a path binding | FK → `wo_pp_binding` (V4) |
 | Units inherit path via WO — not a column on the panel row | Join WO → `process_path_id` |
@@ -31,7 +31,7 @@ Flyway `V1`…`Vn` is the path the database took. New readers should not have to
 ## Picture
 
 ```text
-process_path                 wo_pp_binding                 wo_management
+process_path                 wo_pp_binding                 panel_registration
 ┌──────────────────┐        ┌─────────────────────┐      ┌──────────────────────────┐
 │ process_path_id  │◄─── ?  │ work_order_id (PK)  │◄────│ work_order_id (FK)       │
 │ content (JSON)   │        │ process_path_id     │      │ panel_number (UNIQUE)    │
@@ -66,7 +66,7 @@ process_path                 wo_pp_binding                 wo_management
 
 No ERP quantity/status here (DoD-7).
 
-### `wo_management` — panel under a work order (AS2-02)
+### `panel_registration` — panel under a work order (AS2-02)
 
 | Column | Meaning |
 |--------|---------|
@@ -75,7 +75,7 @@ No ERP quantity/status here (DoD-7).
 | `work_order_id` | FK → `wo_pp_binding` |
 | `registered_at` | Panel Registration time |
 
-Table name is historical (“management”); plant language is **Panel Registration** join.
+Renamed from `wo_management` in V5 so table ↔ entity ↔ API share plant language (see `.cursor/rules/plant-language-naming.mdc`).
 
 ---
 

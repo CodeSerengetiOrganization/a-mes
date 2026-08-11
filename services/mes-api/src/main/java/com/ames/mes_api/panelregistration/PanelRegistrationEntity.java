@@ -10,13 +10,13 @@ import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
 
 /**
- * Maps {@code wo_management} — panel joined to a work order at Panel Registration.
- * DB also has UNIQUE(panel_number) + FK(work_order_id) → wo_pp_binding (V4).
+ * Maps {@code panel_registration} — panel joined to a work order at Panel Registration.
+ * DB: UNIQUE(panel_number) + FK(work_order_id) → wo_pp_binding (V4); table renamed from {@code wo_management} (V5).
  */
 @Entity
 @Table(
-		name = "wo_management",
-		uniqueConstraints = @UniqueConstraint(name = "uq_wo_management_panel_number", columnNames = "panel_number"))
+		name = "panel_registration",
+		uniqueConstraints = @UniqueConstraint(name = "uq_panel_registration_panel_number", columnNames = "panel_number"))
 public class PanelRegistrationEntity {
 
 	@Id

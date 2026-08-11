@@ -138,42 +138,21 @@ class PanelRegistrationServiceTest {
 	}
 
 	/**
-	 * Concurrent double-submit: soft exists check passed, but save hits UNIQUE(panel_number).
-	 * Re-check finds the panel → 409 (not 500).
+	 * Concurrent race after soft checks: save hits UNIQUE or FK → 409 (not 500).
+	 * No re-query after failed INSERT (same-TX session may be unusable).
 	 */
 	@Test
-	void register_whenSaveHitsUniqueConstraint_throwsConflict() {
+	void register_whenSaveHitsIntegrityConstraint_throwsConflict() {
 		when(workOrderRepository.existsById("WO-DEMO-001")).thenReturn(true);
-		// 1st call: soft pre-check (false). 2nd call: re-check after integrity failure (true).
-		when(panelRegistrationRepository.existsByPanelNumber("PANEL-DEMO-004")).thenReturn(false, true);
+		when(panelRegistrationRepository.existsByPanelNumber("PANEL-DEMO-004")).thenReturn(false);
 		when(panelRegistrationRepository.save(any(PanelRegistrationEntity.class)))
-				.thenThrow(new DataIntegrityViolationException("duplicate panel_number"));
+				.thenThrow(new DataIntegrityViolationException("integrity"));
 
 		ResponseStatusException ex = assertThrows(
 				ResponseStatusException.class,
 				() -> panelRegistrationService.register(request));
 
 		assertEquals(HttpStatus.CONFLICT, ex.getStatusCode());
-		assertEquals("panel already registered: PANEL-DEMO-004", ex.getReason());
-	}
-
-	/**
-	 * WO passed existsById, then disappeared before save → FK fails.
-	 * Re-check finds WO missing → 404 (not 409 / not 500).
-	 */
-	@Test
-	void register_whenSaveHitsFkBecauseWorkOrderGone_throwsNotFound() {
-		// 1st call: soft pre-check (true). 2nd call: re-check after integrity failure (false).
-		when(workOrderRepository.existsById("WO-DEMO-001")).thenReturn(true, false);
-		when(panelRegistrationRepository.existsByPanelNumber("PANEL-DEMO-004")).thenReturn(false);
-		when(panelRegistrationRepository.save(any(PanelRegistrationEntity.class)))
-				.thenThrow(new DataIntegrityViolationException("fk work_order_id"));
-
-		ResponseStatusException ex = assertThrows(
-				ResponseStatusException.class,
-				() -> panelRegistrationService.register(request));
-
-		assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
-		assertEquals("work order not found: WO-DEMO-001", ex.getReason());
+		assertEquals("panel registration conflict: PANEL-DEMO-004", ex.getReason());
 	}
 }
