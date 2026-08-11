@@ -59,6 +59,7 @@ Soft checks cover the normal path. On `DataIntegrityViolationException` after `s
 
 ## Persist
 
-Insert into `panel_registration` (`panel_number`, `work_order_id`, `registered_at`).
+Insert into `panel_registration` (`panel_number`, `work_order_id`).  
+`registered_at` is set by MySQL `DEFAULT CURRENT_TIMESTAMP` (not sent from Java).
 
 Schema: `UNIQUE(panel_number)`; `FOREIGN KEY (work_order_id) REFERENCES wo_pp_binding (work_order_id)` (V4); table renamed from `wo_management` (V5).

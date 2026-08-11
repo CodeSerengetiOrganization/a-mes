@@ -8,6 +8,8 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import java.time.LocalDateTime;
+import org.hibernate.annotations.Generated;
+import org.hibernate.generator.EventType;
 
 /**
  * Maps {@code panel_registration} — panel joined to a work order at Panel Registration.
@@ -29,7 +31,9 @@ public class PanelRegistrationEntity {
 	@Column(name = "work_order_id", length = 64, nullable = false)
 	private String workOrderId;
 
-	@Column(name = "registered_at", nullable = false)
+	/** Filled by MySQL {@code DEFAULT CURRENT_TIMESTAMP} — not written by the app. */
+	@Generated(event = EventType.INSERT)
+	@Column(name = "registered_at", nullable = false, insertable = false, updatable = false)
 	private LocalDateTime registeredAt;
 
 	public Integer getId() {

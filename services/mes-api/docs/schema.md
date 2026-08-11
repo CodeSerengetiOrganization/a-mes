@@ -73,7 +73,7 @@ No ERP quantity/status here (DoD-7).
 | `id` | Surrogate PK |
 | `panel_number` | Panel identity (UNIQUE — one WO only) |
 | `work_order_id` | FK → `wo_pp_binding` |
-| `registered_at` | Panel Registration time |
+| `registered_at` | Panel Registration time (`DEFAULT CURRENT_TIMESTAMP` — DB owns stamp) |
 
 Renamed from `wo_management` in V5 so table ↔ entity ↔ API share plant language (see `.cursor/rules/plant-language-naming.mdc`).
 

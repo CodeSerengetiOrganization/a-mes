@@ -1,6 +1,5 @@
 package com.ames.mes_api.panelregistration;
 
-import java.time.LocalDateTime;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -38,7 +37,7 @@ public class PanelRegistrationService {
 		PanelRegistrationEntity entity = new PanelRegistrationEntity();
 		entity.setPanelNumber(panelNumber);
 		entity.setWorkOrderId(workOrderId);
-		entity.setRegisteredAt(LocalDateTime.now());
+		// registered_at: DB DEFAULT CURRENT_TIMESTAMP (not set in Java)
 
 		try {
 			PanelRegistrationEntity saved = panelRegistrationRepository.save(entity);

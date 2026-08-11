@@ -18,6 +18,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.server.ResponseStatusException;
+import java.time.LocalDateTime;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Unit tests for {@link PanelRegistrationService} (Maya draft — please review).
@@ -61,10 +63,13 @@ class PanelRegistrationServiceTest {
 	void register_whenWorkOrderExistsAndPanelNew_savesAndReturnsResponse() {
 		when(workOrderRepository.existsById("WO-DEMO-001")).thenReturn(true);
 		when(panelRegistrationRepository.existsByPanelNumber("PANEL-DEMO-004")).thenReturn(false);
-		// Simulate DB assigning an id on insert.
+		AtomicReference<LocalDateTime> registeredAtSentToSave = new AtomicReference<>();
+		// Simulate DB: IDENTITY id + DEFAULT CURRENT_TIMESTAMP for registered_at.
 		when(panelRegistrationRepository.save(any(PanelRegistrationEntity.class))).thenAnswer(invocation -> {
 			PanelRegistrationEntity e = invocation.getArgument(0);
+			registeredAtSentToSave.set(e.getRegisteredAt());
 			e.setId(42);
+			e.setRegisteredAt(LocalDateTime.of(2026, 8, 10, 12, 0, 0));
 			return e;
 		});
 
@@ -74,12 +79,12 @@ class PanelRegistrationServiceTest {
 		assertEquals("WO-DEMO-001", response.getWorkOrderId());
 		assertNotNull(response.getRegisteredAt());
 
-		// Also assert what we asked the repo to save (not only the response DTO).
 		ArgumentCaptor<PanelRegistrationEntity> captor = ArgumentCaptor.forClass(PanelRegistrationEntity.class);
 		verify(panelRegistrationRepository).save(captor.capture());
 		assertEquals("PANEL-DEMO-004", captor.getValue().getPanelNumber());
 		assertEquals("WO-DEMO-001", captor.getValue().getWorkOrderId());
-		assertNotNull(captor.getValue().getRegisteredAt());
+		// Java must not stamp registered_at before save (DB default owns it).
+		assertEquals(null, registeredAtSentToSave.get());
 	}
 
 	/**
