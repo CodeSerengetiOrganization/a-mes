@@ -26,5 +26,8 @@ replay_pid*
 # MySQL secrets (copy from *.example)
 deploy/k3s/mysql/mysql-secret.yaml
 
+# Local mes-api env (copy from services/mes-api/.env.example)
+services/mes-api/.env
+
 # Local scratch (not for the team)
 only-for-me/

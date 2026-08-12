@@ -1,0 +1,30 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="mes-api (dev)" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot">
+    <option name="ACTIVE_PROFILES" value="dev" />
+    <module name="mes-api" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="com.ames.mes_api.MesApiApplication" />
+    <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/services/mes-api" />
+    <option name="ALTERNATIVE_JRE_PATH_ENABLED" value="false" />
+    <option name="SHORTEN_COMMAND_LINE" value="ARGS_FILE" />
+    <envs>
+      <env name="MYSQL_HOST" value="127.0.0.1" />
+      <env name="MYSQL_PORT" value="3306" />
+      <env name="MYSQL_USER" value="ames" />
+    </envs>
+    <!-- Optional: EnvFile plugin loads MYSQL_PASSWORD from .env. Or set MYSQL_PASSWORD in Environment variables UI. -->
+    <extension name="net.ashald.envfile">
+      <option name="IS_ENABLED" value="true" />
+      <option name="IS_SUBST" value="false" />
+      <option name="IS_PATH_MACRO_SUPPORTED" value="true" />
+      <option name="IS_IGNORE_MISSING_FILES" value="true" />
+      <option name="IS_ENABLE_EXPERIMENTAL_PARSERS" value="false" />
+      <ENTRIES>
+        <ENTRY IS_ENABLED="true" PARSER="runconfig" IS_EXECUTABLE="false" />
+        <ENTRY IS_ENABLED="true" PARSER="env" IS_EXECUTABLE="false" PATH="$PROJECT_DIR$/services/mes-api/.env" />
+      </ENTRIES>
+    </extension>
+    <method v="2">
+      <option name="Make" enabled="true" />
+    </method>
+  </configuration>
+</component>

@@ -14,7 +14,7 @@ WITH checks AS (
     IF(COUNT(*) = 3, 'PASS', 'FAIL') AS assertion,
     COUNT(*) AS metric_count,
     'expect 3 panels each on correct WO+path' AS rule
-  FROM wo_management m
+  FROM panel_registration m
   JOIN wo_pp_binding b ON b.work_order_id = m.work_order_id
   WHERE
        (m.panel_number = 'PANEL-DEMO-001' AND m.work_order_id = 'WO-DEMO-001' AND b.process_path_id = 'pp_full_eol')
@@ -29,7 +29,7 @@ WITH checks AS (
     IF(COUNT(*) = 0, 'PASS', 'FAIL'),
     COUNT(*),
     'no panel outside expected WO+path map'
-  FROM wo_management m
+  FROM panel_registration m
   JOIN wo_pp_binding b ON b.work_order_id = m.work_order_id
   WHERE NOT (
        (m.panel_number = 'PANEL-DEMO-001' AND m.work_order_id = 'WO-DEMO-001' AND b.process_path_id = 'pp_full_eol')
