@@ -72,10 +72,12 @@ jobs:
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       # Step 7: Build Docker image with GHCR naming convention
-      # Dockerfile lives in this directory (job cwd) so it is inside the context.
+      # Dockerfile must be committed at services/mes-api/Dockerfile (job cwd).
       - name: Build Docker image for GHCR
         run: |
           echo "Building Docker image with version $PROJECT_VERSION"
+          echo "Build context: $(pwd)"
+          test -f Dockerfile || { echo "ERROR: Dockerfile not in checkout"; ls -la; exit 1; }
           docker build -t "mes-api:$PROJECT_VERSION" .
           docker tag "mes-api:$PROJECT_VERSION" "${IMAGE_NAME}:$PROJECT_VERSION"
           docker tag "mes-api:$PROJECT_VERSION" "${IMAGE_NAME}:latest"
