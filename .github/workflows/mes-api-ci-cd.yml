@@ -1,0 +1,101 @@
+# mes-api CI — build jar, push image to GHCR (same shape as mms-backend)
+name: mes-api CI/CD
+
+on:
+  push:
+    branches: [develop]
+  pull_request:
+    branches: [develop]
+
+env:
+  IMAGE_NAME: ghcr.io/codeserengetiorganization/a-mes/mes-api
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+
+    defaults:
+      run:
+        working-directory: services/mes-api
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+
+      # Step 3: Configure Maven settings.xml for GitHub Packages authentication
+      # (same pattern as mms-backend — ready if we add org packages later)
+      - name: Configure Maven settings.xml
+        working-directory: .
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml << 'EOF'
+          <settings>
+            <servers>
+              <server>
+                <id>github</id>
+                <username>${GITHUB_ACTOR}</username>
+                <password>${GITHUB_TOKEN}</password>
+              </server>
+            </servers>
+          </settings>
+          EOF
+        env:
+          GITHUB_ACTOR: ${{ github.actor }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Step 4: Build Spring Boot JAR
+      - name: Build Spring Boot JAR
+        run: mvn clean package -DskipTests
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Step 5: Extract version from pom.xml once and set as workflow environment variable
+      - name: Set version from pom.xml
+        run: |
+          VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+          echo "PROJECT_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Version is $VERSION"
+
+      # Step 6: Log in to GitHub Container Registry (GHCR)
+      - name: Login to GitHub Container Registry (GHCR)
+        working-directory: .
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      # Step 7: Build Docker image with GHCR naming convention
+      - name: Build Docker image for GHCR
+        run: |
+          echo "Building Docker image with version $PROJECT_VERSION"
+          docker build -t "mes-api:$PROJECT_VERSION" -f ../../deploy/k3s/mes-api/Dockerfile .
+          docker tag "mes-api:$PROJECT_VERSION" "${IMAGE_NAME}:$PROJECT_VERSION"
+          docker tag "mes-api:$PROJECT_VERSION" "${IMAGE_NAME}:latest"
+
+      # Step 8: Push Docker image to GHCR
+      - name: Push Docker image to GHCR
+        run: |
+          echo "Pushing Docker image with version $PROJECT_VERSION"
+          docker push "${IMAGE_NAME}:$PROJECT_VERSION"
+          docker push "${IMAGE_NAME}:latest"
+
+      # Step 9: (Optional) Save Docker image as a .tar artifact
+      - name: Save Docker image to tar
+        run: |
+          echo "Saving Docker image with version $PROJECT_VERSION"
+          docker save -o "mes-api-$PROJECT_VERSION.tar" "${IMAGE_NAME}:$PROJECT_VERSION"
+          docker save -o mes-api-latest.tar "${IMAGE_NAME}:latest"
+
+      # Step 10: Upload Docker image artifact (GitHub Actions v4 syntax)
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mes-api-image-${{ env.PROJECT_VERSION }}
+          path: services/mes-api/mes-api-${{ env.PROJECT_VERSION }}.tar
