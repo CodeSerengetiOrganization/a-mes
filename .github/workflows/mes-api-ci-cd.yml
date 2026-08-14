@@ -1,4 +1,4 @@
-# mes-api CI — build jar, push image to GHCR (same shape as mms-backend)
+# mes-api CI/CD — build jar, push image to GHCR, deploy to K3s on develop
 name: mes-api CI/CD
 
 on:
@@ -72,10 +72,15 @@ jobs:
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
       # Step 7: Build Docker image with GHCR naming convention
+      # Context = services/mes-api (jar lives in target/). Dockerfile is outside that
+      # folder, so -f must be from repo root — BuildKit rejects ../../ relative to context.
       - name: Build Docker image for GHCR
+        working-directory: .
         run: |
           echo "Building Docker image with version $PROJECT_VERSION"
-          docker build -t "mes-api:$PROJECT_VERSION" -f ../../deploy/k3s/mes-api/Dockerfile .
+          docker build -t "mes-api:$PROJECT_VERSION" \
+            -f deploy/k3s/mes-api/Dockerfile \
+            services/mes-api
           docker tag "mes-api:$PROJECT_VERSION" "${IMAGE_NAME}:$PROJECT_VERSION"
           docker tag "mes-api:$PROJECT_VERSION" "${IMAGE_NAME}:latest"
 
