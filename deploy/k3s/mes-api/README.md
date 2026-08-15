@@ -23,7 +23,7 @@ Default in `deployment.yaml`: **`…/mes-api:0.0.1-SNAPSHOT`** (matches current 
 
 | File | Role |
 |------|------|
-| `Dockerfile` | Notes only — canonical build is `services/mes-api/Dockerfile` |
+| [`services/mes-api/Dockerfile`](../../../services/mes-api/Dockerfile) | **Only** image build SoT (CI + local) |
 | `deployment.yaml` | Deployment **`ames-mes-api`** — default version pin |
 | `service.yaml` | NodePort Service **`ames-mes-api`** (`:30100`) |
 | `mes-api-config.yaml` | JDBC URL + Spring profile |
@@ -52,7 +52,7 @@ Local jar + image (laptop only — prefer GHCR for staging):
 
 ```bash
 cd services/mes-api
-mvn clean package -DskipTests
+mvn clean verify
 docker build -t mes-api:0.0.1-SNAPSHOT .
 ```
 
