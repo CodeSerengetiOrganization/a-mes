@@ -17,16 +17,17 @@ Workflow: [`.github/workflows/mes-api-ci-cd.yml`](../../../.github/workflows/mes
 
 **CD:** Actions does **not** talk to K3s. Promote with `deploy.sh` (pins a version tag — never relies on `:latest` for staging).
 
-Default in `deployment.yaml`: **`…/mes-api:0.0.1-SNAPSHOT`** (matches current pom). `deploy.sh` overrides with pom or `MES_API_IMAGE`.
+Default in `deployment.yaml`: **`…/mes-api:USE_DEPLOY_DOT_SH_ONLY`** (placeholder — not a real tag). **Always** promote with `deploy.sh`; image SoT is `pom.xml` (or `MES_API_IMAGE`).
 
 ## Files
 
 | File | Role |
 |------|------|
 | [`services/mes-api/Dockerfile`](../../../services/mes-api/Dockerfile) | **Only** image build SoT (CI + local) |
-| `deployment.yaml` | Deployment **`ames-mes-api`** — default version pin |
+| `deployment.yaml` | Deployment **`ames-mes-api`** — image placeholder; real tag via `deploy.sh` |
+| `pdb.yaml` | PodDisruptionBudget **`ames-mes-api`** — `minAvailable: 1` |
 | `service.yaml` | NodePort Service **`ames-mes-api`** (`:30100`) |
-| `mes-api-config.yaml` | JDBC URL + Spring profile |
+| `mes-api-config.yaml` | JDBC URL + CORS origins (UI NodePort **30101**; no Spring profile) |
 | `mes-api-db-secret.yaml.example` | Copy → `mes-api-db-secret.yaml` (gitignored) |
 | `mes-api-ghcr-secret.yaml.example` | Copy → `mes-api-ghcr-secret.yaml` (gitignored) — GHCR image pull |
 | `deploy.sh` | apply → **pin image** (`kubectl set image`) → rollout |

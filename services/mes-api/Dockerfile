@@ -4,4 +4,5 @@ WORKDIR /app
 # Version comes from pom — do not hardcode SNAPSHOT in the path
 COPY target/mes-api-*.jar app.jar
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# Heap from container cgroup (k3s limit 512Mi) — leave headroom for non-heap / OOMKill
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-jar", "app.jar"]

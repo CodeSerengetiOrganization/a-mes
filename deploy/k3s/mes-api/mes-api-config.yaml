@@ -7,6 +7,9 @@ metadata:
     app: ames-mes-api
     app.kubernetes.io/part-of: ames
 data:
-  SPRING_PROFILES_ACTIVE: dev
   # In-cluster Service name (ames-dev): ames-mysql — not "mysql"
+  # No SPRING_PROFILES_ACTIVE here — application-local.properties is laptop-only.
   SPRING_DATASOURCE_URL: jdbc:mysql://ames-mysql:3306/ames?serverTimezone=UTC
+  # Browser Origin for panel-registration-ui (NodePort 30101). Refresh host if DHCP changes.
+  # Vite localhost kept for hybrid laptop UI → cluster API demos.
+  AMES_CORS_ALLOWED_ORIGINS: "http://192.168.2.233:30101,http://localhost:5173,http://127.0.0.1:5173"

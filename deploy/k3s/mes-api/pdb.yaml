@@ -1,0 +1,13 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: ames-mes-api
+  namespace: ames-dev
+  labels:
+    app: ames-mes-api
+    app.kubernetes.io/part-of: ames
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: ames-mes-api

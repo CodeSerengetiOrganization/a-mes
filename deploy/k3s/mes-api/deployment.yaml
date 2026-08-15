@@ -21,8 +21,9 @@ spec:
         - name: mes-api-ghcr-secret
       containers:
         - name: mes-api
-          # Default pin = current pom version. Promote overrides via deploy.sh (MES_API_IMAGE or pom).
-          image: ghcr.io/codeserengetiorganization/a-mes/mes-api:0.0.1-SNAPSHOT
+          # Not a version SoT — do not kubectl apply this Deployment alone.
+          # Promote: ./deploy.sh (pins image from pom.xml or MES_API_IMAGE).
+          image: ghcr.io/codeserengetiorganization/a-mes/mes-api:USE_DEPLOY_DOT_SH_ONLY
           imagePullPolicy: Always
           ports:
             - containerPort: 8080
@@ -35,11 +36,6 @@ spec:
               memory: "512Mi"
               cpu: "500m"
           env:
-            - name: SPRING_PROFILES_ACTIVE
-              valueFrom:
-                configMapKeyRef:
-                  name: mes-api-config
-                  key: SPRING_PROFILES_ACTIVE
             - name: SPRING_DATASOURCE_URL
               valueFrom:
                 configMapKeyRef:
@@ -55,10 +51,11 @@ spec:
                 secretKeyRef:
                   name: mes-api-db-secret
                   key: SPRING_DATASOURCE_PASSWORD
-            - name: MYSQL_HOST
-              value: "ames-mysql"
-            - name: MYSQL_PORT
-              value: "3306"
+            - name: AMES_CORS_ALLOWED_ORIGINS
+              valueFrom:
+                configMapKeyRef:
+                  name: mes-api-config
+                  key: AMES_CORS_ALLOWED_ORIGINS
           startupProbe:
             httpGet:
               path: /actuator/health/liveness
