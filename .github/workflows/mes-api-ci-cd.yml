@@ -53,9 +53,9 @@ jobs:
           GITHUB_ACTOR: ${{ github.actor }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # Step 4: Build Spring Boot JAR
+      # Step 4: Build Spring Boot JAR (unit/API tests gate the image)
       - name: Build Spring Boot JAR
-        run: mvn clean package -DskipTests
+        run: mvn clean verify
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -80,21 +80,25 @@ jobs:
           test -f Dockerfile || { echo "ERROR: Dockerfile not in checkout"; ls -la; exit 1; }
           docker build -t "mes-api:$PROJECT_VERSION" .
           docker tag "mes-api:$PROJECT_VERSION" "${IMAGE_NAME}:$PROJECT_VERSION"
-          docker tag "mes-api:$PROJECT_VERSION" "${IMAGE_NAME}:latest"
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/develop" ]]; then
+            docker tag "mes-api:$PROJECT_VERSION" "${IMAGE_NAME}:latest"
+          fi
 
-      # Step 8: Push Docker image to GHCR
+      # Step 8: Push Docker image to GHCR (version always; :latest only on develop merge)
       - name: Push Docker image to GHCR
         run: |
           echo "Pushing Docker image with version $PROJECT_VERSION"
           docker push "${IMAGE_NAME}:$PROJECT_VERSION"
-          docker push "${IMAGE_NAME}:latest"
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/develop" ]]; then
+            echo "Pushing :latest (develop only)"
+            docker push "${IMAGE_NAME}:latest"
+          fi
 
       # Step 9: (Optional) Save Docker image as a .tar artifact
       - name: Save Docker image to tar
         run: |
           echo "Saving Docker image with version $PROJECT_VERSION"
           docker save -o "mes-api-$PROJECT_VERSION.tar" "${IMAGE_NAME}:$PROJECT_VERSION"
-          docker save -o mes-api-latest.tar "${IMAGE_NAME}:latest"
 
       # Step 10: Upload Docker image artifact (GitHub Actions v4 syntax)
       - name: Upload Docker image artifact

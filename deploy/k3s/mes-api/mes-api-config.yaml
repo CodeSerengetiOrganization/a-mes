@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mes-api-config
+  namespace: ames-dev
+  labels:
+    app: ames-mes-api
+    app.kubernetes.io/part-of: ames
+data:
+  SPRING_PROFILES_ACTIVE: dev
+  # In-cluster Service name (ames-dev): ames-mysql — not "mysql"
+  SPRING_DATASOURCE_URL: jdbc:mysql://ames-mysql:3306/ames?serverTimezone=UTC
