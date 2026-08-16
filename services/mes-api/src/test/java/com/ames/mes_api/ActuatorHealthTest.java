@@ -1,14 +1,19 @@
 package com.ames.mes_api;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
 import com.ames.mes_api.panelregistration.PanelRegistrationRepository;
 import com.ames.mes_api.panelregistration.WorkOrderRepository;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
+import org.springframework.test.web.servlet.MockMvc;
 
 /**
- * Scaffold smoke test — no live MySQL required.
- * JPA excluded → mock repositories so Panel Registration beans can wire.
+ * K3s probes depend on Actuator health. Repositories mocked — no live MySQL.
  */
 @SpringBootTest(properties = {
 		"spring.autoconfigure.exclude="
@@ -16,7 +21,11 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 				+ "org.springframework.boot.hibernate.autoconfigure.HibernateJpaAutoConfiguration,"
 				+ "org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration"
 })
-class MesApiApplicationTests {
+@AutoConfigureMockMvc
+class ActuatorHealthTest {
+
+	@Autowired
+	private MockMvc mockMvc;
 
 	@MockitoBean
 	private PanelRegistrationRepository panelRegistrationRepository;
@@ -25,7 +34,13 @@ class MesApiApplicationTests {
 	private WorkOrderRepository workOrderRepository;
 
 	@Test
-	void contextLoads() {
+	void liveness_returns200() throws Exception {
+		mockMvc.perform(get("/actuator/health/liveness")).andExpect(status().isOk());
 	}
 
+	@Test
+	void readiness_returns200() throws Exception {
+		mockMvc.perform(get("/actuator/health/readiness")).andExpect(status().isOk());
+	}
 }
+

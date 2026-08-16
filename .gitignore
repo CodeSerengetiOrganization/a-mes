@@ -26,6 +26,12 @@ replay_pid*
 # MySQL secrets (copy from *.example)
 deploy/k3s/mysql/mysql-secret.yaml
 
+# mes-api DB secret (copy from deploy/k3s/mes-api/mes-api-db-secret.yaml.example)
+deploy/k3s/mes-api/mes-api-db-secret.yaml
+
+# mes-api GHCR pull secret (copy from deploy/k3s/mes-api/mes-api-ghcr-secret.yaml.example)
+deploy/k3s/mes-api/mes-api-ghcr-secret.yaml
+
 # Local mes-api env (copy from services/mes-api/.env.example)
 services/mes-api/.env
 

@@ -1,0 +1,79 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ames-mes-api
+  namespace: ames-dev
+  labels:
+    app: ames-mes-api
+    app.kubernetes.io/part-of: ames
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ames-mes-api
+  template:
+    metadata:
+      labels:
+        app: ames-mes-api
+        app.kubernetes.io/part-of: ames
+    spec:
+      imagePullSecrets:
+        - name: mes-api-ghcr-secret
+      containers:
+        - name: mes-api
+          # Not a version SoT — do not kubectl apply this Deployment alone.
+          # Promote: ./deploy.sh (pins image from pom.xml or MES_API_IMAGE).
+          image: ghcr.io/codeserengetiorganization/a-mes/mes-api:USE_DEPLOY_DOT_SH_ONLY
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              name: http
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          env:
+            - name: SPRING_DATASOURCE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: mes-api-config
+                  key: SPRING_DATASOURCE_URL
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: mes-api-db-secret
+                  key: SPRING_DATASOURCE_USERNAME
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: mes-api-db-secret
+                  key: SPRING_DATASOURCE_PASSWORD
+            - name: AMES_CORS_ALLOWED_ORIGINS
+              valueFrom:
+                configMapKeyRef:
+                  name: mes-api-config
+                  key: AMES_CORS_ALLOWED_ORIGINS
+          startupProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 18
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
