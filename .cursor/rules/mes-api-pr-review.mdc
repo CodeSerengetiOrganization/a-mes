@@ -1,0 +1,81 @@
+---
+description: A-MES mes-api PR/deploy review bar — app code, package SoT, k3s runtime, tests (decisions only)
+globs: "services/mes-api/**,deploy/k3s/mes-api/**,.github/workflows/mes-api*.yml"
+alwaysApply: false
+---
+
+# mes-api PR review bar
+
+Use when reviewing or changing mes-api code, image build, CI, or k3s promote. **Ship/reject gates only** — depth lives in linked docs. Plant nouns: see `plant-language-naming.mdc`.
+
+## Application code (Spring / Panel Registration)
+
+Decisions from backend reviews + tech note **12** + AS2-02 join rules as implemented. Do not re-litigate in every PR.
+
+| Decision | Reject if |
+|----------|-----------|
+| **Package by feature** — `com.ames.mes_api.<feature>/` (e.g. `panelregistration/`) for Epic A | New top-level `controller/` + `service/` + `repository/` layer trees for floor APIs; or a god `MesServiceController` |
+| **Operation-named controllers** — thin HTTP only; **service owns plant rules** | Fat controller with WO/panel rules; business logic in `@RestController` |
+| **API DTOs ≠ entities** — request/response separate from JPA entities | Exposing entities as JSON bodies / binding `@RequestBody` to entities |
+| **Flyway owns schema** — `spring.jpa.hibernate.ddl-auto=none` | `ddl-auto=update` / Hibernate creating plant tables in lieu of migrations |
+| **Panel Registration join HTTP** — missing WO → **404**; panel already joined / integrity race → **409**; trim panel + WO ids before lookup/save | Silent 500 for plant conflicts; skipping trim so spaces bypass UNIQUE / miss WO |
+| **`registered_at`** — DB `DEFAULT CURRENT_TIMESTAMP`; Java must not stamp before save | Service sets `registeredAt` on insert path |
+| **Integrity race** — catch `DataIntegrityViolationException` → **409**; do **not** re-query in the same TX after failed INSERT | Re-query after failed save (session often unusable → 500) |
+| **Validation** — `@Valid` on request body; `@NotBlank` (etc.) on DTOs | Relying only on service null checks for blank scanner input |
+| **CORS enforcement in Spring** — `CorsConfig` reads `ames.cors.allowed-origins`; `${key:default}` is **not** a merge with ConfigMap | Assuming jar default origins are auto-appended when env is set; hardcoding staging NodePort origins in Java |
+
+Depth: `a-mes-docs` tech note **12** (packaging); AS2-02 AC (join rules); tech note **13** (CORS property binding).
+
+## Package & image SoT
+
+| Decision | Reject if |
+|----------|-----------|
+| **Version SoT** = `services/mes-api/pom.xml` → GHCR tag → `deploy.sh` pin (`MES_API_IMAGE` override OK) | Second version string in Deployment/CI as a competing SoT; promote via `:latest` for staging |
+| **Image build SoT** = only `services/mes-api/Dockerfile` | Duplicate Dockerfile under `deploy/` (or elsewhere) that CI/local might use instead |
+| **Deployment image** = placeholder `…:USE_DEPLOY_DOT_SH_ONLY`; real tag only via `deploy.sh` | Hardcoded `0.0.1-SNAPSHOT` / release version baked into `deployment.yaml` as the promote path |
+
+Detail: `deploy/k3s/mes-api/README.md`.
+
+## Runtime config SoT (k3s)
+
+| Decision | Reject if |
+|----------|-----------|
+| Staging CORS origins owned by ConfigMap `AMES_CORS_ALLOWED_ORIGINS` → env → `ames.cors.allowed-origins` | Plant/NodePort origins hardcoded only in Java or jar properties for k3s |
+| K3s must **not** set Spring profile `local` | `application-local.properties` activated on cluster (laptop-only) |
+
+Relaxed binding: env `AMES_CORS_ALLOWED_ORIGINS` ≡ property `ames.cors.allowed-origins` (not “lowercase only”). Depth: `a-mes-docs` tech note **13**.
+
+## Actuator & JVM (k3s)
+
+| Decision | Reject if |
+|----------|-----------|
+| `management.endpoints.web.exposure.include=health` (+ probes enabled) | Broaden to `*` / `env` / `beans` / `heapdump` on the app port without a separate management story |
+| Container memory limit respected: `-XX:MaxRAMPercentage=75.0` in image ENTRYPOINT; Deployment limit **512Mi** (laptop-friendly) | Bare `java -jar` with no RAM fraction while keeping a tight limit — or blindly raising limit on the T470 instead of teaching the JVM the cgroup |
+
+Probe paths `/actuator/health/liveness` and `/readiness` are under **health** — do not add a fake `readiness` exposure id.
+
+## Tests
+
+| Decision | Reject if |
+|----------|-----------|
+| `@SpringBootTest` smoke with JPA/DataSource/Flyway **excluded** → `@MockitoBean` the **repositories** the app still injects | Expecting context to start with no repo beans after excluding JPA; or mocking services “because we don’t call them” (context still constructs the object graph) |
+| Exclude Flyway/JPA autoconfig is enough when nothing injects those beans — **do not** `@MockitoBean` Flyway “for symmetry” | Mocking infrastructure no app bean depends on |
+| **Service unit tests** = Mockito only (`@ExtendWith` + `@Mock` / `@InjectMocks`), no Spring — no autoconfig exclude | Treating `*ServiceTest` like a full context test or requiring a DB |
+| **Controller slice** (`@WebMvcTest`) → `@MockitoBean` the **service**; plant rules stay in service tests | Re-testing 404/409/trim only in WebMvcTest while skipping service tests (or wiring real JPA in MVC slice) |
+| PR ship bar: map **each ticket AC → automated test** (or checked-in demo path) in the PR description | Merge on vibe with no AC→test map for AS2-style tickets |
+
+## Non-blockers (do not reject for these alone)
+
+- `COPY target/mes-api-*.jar` glob — OK while CI is `mvn clean` + one jar; optional later `finalName` / multi-stage. **Release pick is image tag, not the glob.**
+- Maven `settings.xml` heredoc `'EOF'` with literal `${GITHUB_ACTOR}` — fine until a **GitHub Packages** Maven dependency exists (unrelated to private GHCR image pull).
+- Laptop sleep / flannel `subnet.env` blips — ops/node, not an mes-api code defect; don’t “fix” with JVM flags.
+
+## Failure triage (don’t mis-blame the last commit)
+
+| Signal | Likely cause |
+|--------|----------------|
+| `OOMKilled` / exit **137** | Memory limit vs JVM — check `MaxRAMPercentage` / limit |
+| Exit **1** + `UnknownHostException: ames-mysql` / Flyway link failure | CNI/DNS (flannel); API started while MySQL name failed |
+| Probe `connection refused` during slow Spring boot | Startup still in progress or process already dead — check logs, not only describe Events age |
+
+Personas for judgment: Kai (implement/review), Robert (SoT/boundaries), Elon (delete non-gates) — `project-vector/.cursor/personas/`.

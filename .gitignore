@@ -37,3 +37,7 @@ services/mes-api/.env
 
 # Local scratch (not for the team)
 only-for-me/
+
+# Obsidian (local) — Cursor rules SoT remains .cursor/rules/*.mdc
+.obsidian/
+.cursor/rules/*.md
