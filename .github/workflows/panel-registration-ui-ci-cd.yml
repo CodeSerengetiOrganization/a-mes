@@ -1,0 +1,99 @@
+# panel-registration-ui CI/CD — lint/build, push image to GHCR (no K3s deploy)
+# Promote to cluster with deploy/k3s/panel-registration-ui/deploy.sh (later) — same idea as mes-api.
+name: panel-registration-ui CI/CD
+
+on:
+  push:
+    branches: [develop]
+    paths:
+      - "apps/panel-registration-ui/**"
+      - ".github/workflows/panel-registration-ui-ci-cd.yml"
+  pull_request:
+    branches: [develop]
+    paths:
+      - "apps/panel-registration-ui/**"
+      - ".github/workflows/panel-registration-ui-ci-cd.yml"
+
+env:
+  IMAGE_NAME: ghcr.io/codeserengetiorganization/a-mes/panel-registration-ui
+  # Browser-reachable mes-api NodePort (baked into the image). Refresh if DHCP moves the node (Q6/Q7).
+  VITE_MES_API_BASE_URL: http://192.168.2.233:30100
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      packages: write
+
+    defaults:
+      run:
+        working-directory: apps/panel-registration-ui
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/panel-registration-ui/package-lock.json
+
+      # Step 3: Install deps (lockfile)
+      - name: Install dependencies
+        run: npm ci
+
+      # Step 4: Lint gate (typecheck + vite run once inside Docker — no double build)
+      - name: Lint
+        run: npm run lint
+
+      # Step 5: Version SoT = package.json (mirror mes-api pom.xml)
+      - name: Set version from package.json
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "PROJECT_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "Version is $VERSION"
+
+      # Step 6: Log in to GHCR
+      - name: Login to GitHub Container Registry (GHCR)
+        working-directory: .
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      # Step 7: Build image (sole vite/tsc compile + nginx package)
+      - name: Build Docker image for GHCR
+        run: |
+          echo "Building Docker image with version $PROJECT_VERSION"
+          echo "VITE_MES_API_BASE_URL=$VITE_MES_API_BASE_URL"
+          echo "Build context: $(pwd)"
+          test -f Dockerfile || { echo "ERROR: Dockerfile not in checkout"; ls -la; exit 1; }
+          docker build \
+            --build-arg "VITE_MES_API_BASE_URL=$VITE_MES_API_BASE_URL" \
+            -t "panel-registration-ui:$PROJECT_VERSION" .
+          docker tag "panel-registration-ui:$PROJECT_VERSION" "${IMAGE_NAME}:$PROJECT_VERSION"
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/develop" ]]; then
+            docker tag "panel-registration-ui:$PROJECT_VERSION" "${IMAGE_NAME}:latest"
+          fi
+
+      # Step 8: Push (version always; :latest only on develop merge)
+      - name: Push Docker image to GHCR
+        run: |
+          echo "Pushing Docker image with version $PROJECT_VERSION"
+          docker push "${IMAGE_NAME}:$PROJECT_VERSION"
+          if [[ "${{ github.event_name }}" == "push" && "${{ github.ref }}" == "refs/heads/develop" ]]; then
+            echo "Pushing :latest (develop only)"
+            docker push "${IMAGE_NAME}:latest"
+          fi
+
+      # Step 9: Optional tar artifact (same idea as mes-api)
+      - name: Save Docker image to tar
+        run: |
+          echo "Saving Docker image with version $PROJECT_VERSION"
+          docker save -o "panel-registration-ui-$PROJECT_VERSION.tar" "${IMAGE_NAME}:$PROJECT_VERSION"
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: panel-registration-ui-image-${{ env.PROJECT_VERSION }}
+          path: apps/panel-registration-ui/panel-registration-ui-${{ env.PROJECT_VERSION }}.tar

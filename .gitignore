@@ -30,6 +30,7 @@ deploy/k3s/mysql/mysql-secret.yaml
 deploy/k3s/mes-api/mes-api-db-secret.yaml
 
 # mes-api GHCR pull secret (copy from deploy/k3s/mes-api/mes-api-ghcr-secret.yaml.example)
+# Shared by panel-registration-ui Deployment imagePullSecrets as well.
 deploy/k3s/mes-api/mes-api-ghcr-secret.yaml
 
 # Local mes-api env (copy from services/mes-api/.env.example)
@@ -37,3 +38,7 @@ services/mes-api/.env
 
 # Local scratch (not for the team)
 only-for-me/
+
+# Obsidian (local) — Cursor rules SoT remains .cursor/rules/*.mdc
+.obsidian/
+.cursor/rules/*.md

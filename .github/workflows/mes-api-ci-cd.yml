@@ -4,8 +4,14 @@ name: mes-api CI/CD
 on:
   push:
     branches: [develop]
+    paths:
+      - "services/mes-api/**"
+      - ".github/workflows/mes-api-ci-cd.yml"
   pull_request:
     branches: [develop]
+    paths:
+      - "services/mes-api/**"
+      - ".github/workflows/mes-api-ci-cd.yml"
 
 env:
   IMAGE_NAME: ghcr.io/codeserengetiorganization/a-mes/mes-api

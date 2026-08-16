@@ -1,0 +1,60 @@
+# panel-registration-ui on K3s — nginx serves the Vite build (NodePort 30101)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ames-panel-registration-ui
+  namespace: ames-dev
+  labels:
+    app: ames-panel-registration-ui
+    app.kubernetes.io/part-of: ames
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ames-panel-registration-ui
+  template:
+    metadata:
+      labels:
+        app: ames-panel-registration-ui
+        app.kubernetes.io/part-of: ames
+    spec:
+      imagePullSecrets:
+        # One GHCR pull secret in ames-dev (shared with mes-api)
+        - name: mes-api-ghcr-secret
+      containers:
+        - name: panel-registration-ui
+          # Not a version SoT — promote with ./deploy.sh (pins package.json version).
+          image: ghcr.io/codeserengetiorganization/a-mes/panel-registration-ui:USE_DEPLOY_DOT_SH_ONLY
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 80
+              name: http
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "200m"
+          # nginx serves index.html at /
+          startupProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3

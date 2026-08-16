@@ -1,0 +1,71 @@
+---
+description: A-MES Panel Registration UI PR/deploy review bar — thin client, MES SoT, staging (decisions only)
+globs: "apps/panel-registration-ui/**,deploy/k3s/panel-registration-ui/**,.github/workflows/*panel-registration*"
+alwaysApply: false
+---
+
+# Panel Registration UI PR review bar
+
+Use when reviewing or changing `apps/panel-registration-ui` (and its future k3s promote). **Ship/reject gates only.** Plant nouns: see `plant-language-naming.mdc`. API/CORS server side: `mes-api-pr-review.mdc` + tech note **13**.
+
+## Product & scope (AS2-03)
+
+| Decision | Reject if |
+|----------|-----------|
+| **Thin operator client** at PCB Loader — panel + work order in, success/deny out | Building a traveler / full MES shell / ERP screens in this app (**DoD-7**) |
+| **MES remains SoT** for the join — UI only calls AS2-02 `POST /api/panel-registrations` | Inventing “active” work order, process path, or join rules in the browser |
+| **Operator enters both** panel and work order | UI auto-picks or invents the work order / path |
+| **Plant language** on screen — Panel Registration, work order, panel, PCB Loader | ERP “management”, vague “data entry”, demo-placeholder copy that drifts from plant nouns |
+| **Clear feedback** — success names panel under WO; deny shows a short usable reason (missing fields, unknown WO / no path, already registered) | Silent success on deny; blank failure that is really CORS; swallowing API errors with no operator message |
+
+Depth: `a-mes-docs` epic-a **AS2-03**, **AS2-03-fix** (CORS enablement — do not reopen AS2-02).
+
+## Stack & layout
+
+| Decision | Reject if |
+|----------|-----------|
+| App lives under **`apps/panel-registration-ui`**; backends under `services/` | Dropping this UI into `services/` or starting a second Panel Registration SPA elsewhere without an explicit SoT move |
+| **Vite + React + TypeScript** for this thin scan page | Pulling in **Next.js** (or a heavy framework) “for a future full MES UI” without a new ticket / decision |
+| API base from **`VITE_MES_API_BASE_URL`** (no trailing slash); default local `http://localhost:8080` | Hardcoding plant/staging URLs in source as the only config path; committing secrets in `.env` |
+
+## Browser → MES (CORS & errors)
+
+| Decision | Reject if |
+|----------|-----------|
+| Staging/browser joins need **explicit** allowed UI origins on mes-api (not `*`) | “Fix CORS” by allowing all origins on plant/staging |
+| Operator-visible deny on 404/409 (and similar) — parse problem details when present | Treating CORS/network failure as a successful register; empty UI on blocked cross-origin |
+| Double-submit guard while request in flight | Allowing stacked POSTs from repeated Register clicks with no `submitting` lock |
+
+## K3s staging promote (AS2-deploy-ui)
+
+| Decision | Reject if |
+|----------|-----------|
+| **API first** — AS2-deploy-api smoke-green before UI promote | Promoting UI that still points at laptop mes-api for “staging” smoke |
+| Staging UI env/base URL = **K3s MES** (NodePort **30100**), not localhost | Staging smoke against local Boot only |
+| UI NodePort **30101** in the frozen A-MES block (**30100–30109**) | Reusing MMS/`30083` ports for this UI |
+| Smoke = one **success** register + one **clear deny** from staging UI → K3s API | Claim done with build-only / no browser proof |
+
+Detail: `deploy/k3s/README.md` (NodePort block); epic-a **AS2-deploy-ui**.
+
+## Tests / PR ship bar
+
+| Decision | Reject if |
+|----------|-----------|
+| Map **each AS2-03 / deploy-ui AC → proof** in the PR (automated test and/or checked-in browser smoke steps) | Merge on vibe; no AC→proof map |
+| Lint/build must be honest for the slice (`npm run lint` / `npm run build` as gated by CI when present) | Shipping broken TypeScript build for “demo only” without calling it a spike |
+
+## Non-blockers (do not reject for these alone)
+
+- Default Vite README / template CSS debt while the screen still meets thin-client AC.
+- No UI k3s manifests yet while **30101** is only reserved — track under AS2-deploy-ui, don’t invent a second port SoT.
+- Marketing / full-bleed landing design rules do **not** apply to this scan station UI — keep it operable, not promotional.
+
+## Failure triage
+
+| Signal | Likely cause |
+|--------|----------------|
+| Browser “CORS Missing Allow Origin” / opaque fail | mes-api origins ConfigMap / env — tech note **13**; not a new join rule |
+| Success in UI but no row in DB | UI pointed at wrong API base (local vs k3s) |
+| Blank deny / “Something went wrong” only | Network/CORS/parse — check Network tab + API body before blaming plant rules |
+
+Personas: Kai (implement/review), Robert (SoT/thin client boundary), Elon (delete shell/traveler scope) — `project-vector/.cursor/personas/`.
