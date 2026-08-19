@@ -2,7 +2,7 @@
 
 **Type:** Human-readable picture for onboarding — **not** applied by Flyway  
 **SoT for DDL:** `src/main/resources/db/migration/V*.sql` (run by Spring Boot)  
-**As of:** V5 (2026-08-10)  
+**As of:** V6 (2026-08-18)  
 **Audience:** new engineers · Maya / Sam · reviewers
 
 If this note disagrees with a migration, **trust the migration** and update this file.
@@ -25,6 +25,8 @@ Flyway `V1`…`Vn` is the path the database took. New readers should not have to
 | One panel → one work order | `UNIQUE(panel_number)` (V4) |
 | Panel’s WO must already have a path binding | FK → `wo_pp_binding` (V4) |
 | Units inherit path via WO — not a column on the panel row | Join WO → `process_path_id` |
+| Through COMPLETE / quality PASS/FAIL evidence | `operation_event` (append-only; not on `panel_registration`) |
+| EOL retry allowed | No UNIQUE on (`serial_number`, `op_code`) — line management regulates retries |
 
 ---
 
@@ -39,6 +41,18 @@ process_path                 wo_pp_binding                 panel_registration
 │ created_at       │        └─────────────────────┘      │ id (surrogate PK)        │
 └──────────────────┘                                     └──────────────────────────┘
      AS-1 master              AS2-01 WO ↔ path                 AS2-02 Panel Registration
+
+operation_event  (serial → join via panel_registration / later unit join — no WO copy)
+┌──────────────────────────┐
+│ id (surrogate PK)        │
+│ serial_number            │
+│ op_code                  │
+│ equipment_id             │
+│ outcome (COMPLETE/PASS/FAIL) │
+│ equipment_local_at       │
+│ recorded_at (DB default) │
+└──────────────────────────┘
+     AS3-tech performance evidence
 ```
 
 `?` = logical pointer today (`process_path_id` string). Optional hard FK to `process_path` can land in a later migration if we want DB-enforced path ids.
@@ -77,6 +91,23 @@ No ERP quantity/status here (DoD-7).
 
 Renamed from `wo_management` in V5 so table ↔ entity ↔ API share plant language (see `.cursor/rules/plant-language-naming.mdc`).
 
+### `operation_event` — append-only operation evidence (AS3-tech)
+
+| Column | Meaning |
+|--------|---------|
+| `id` | Surrogate PK |
+| `serial_number` | Scanned identity (panel today; unit serial after AS-5) |
+| `op_code` | Path op (`COAT`, `ASM`, `PACK`, `AMBIENT_EOL`, …) — not `equipment_id` |
+| `equipment_id` | Which station/tester client called (e.g. `AEL-01-COAT`) |
+| `outcome` | `COMPLETE` (through) · `PASS` / `FAIL` (quality). Through API writes COMPLETE only |
+| `equipment_local_at` | Client/machine local timestamp — app sets this |
+| `recorded_at` | MES receipt (`DEFAULT CURRENT_TIMESTAMP(3)` — DB owns stamp) |
+
+No `work_order_id` — WO membership stays on `panel_registration` (later unit join).  
+No FK on `serial_number` → `panel_registration` — unit / finished-product serials will not be panels (AS-5).  
+No UNIQUE(`serial_number`, `op_code`) — EOL testers may retry; through double-COMPLETE is a service rule.  
+Knowledge bank: `a-mes-docs` → tech notes **15** (gate vs unique) · **16** (no WO / no panel FK).
+
 ---
 
 ## Demo seeds (dev)
@@ -97,5 +128,5 @@ Sanity SQL: `src/main/resources/db/check/as2_wo_panel_path_check.sql`
 2. Restart app (Flyway migrates).  
 3. Update **this** note so the picture stays current.
 
-Related API: [`api/panel-registration.md`](api/panel-registration.md)  
+Related API: [`api/panel-registration.md`](api/panel-registration.md) · [`api/station-skip-ahead-gate.md`](api/station-skip-ahead-gate.md)  
 Migration index: [`../src/main/resources/db/migration/README.md`](../src/main/resources/db/migration/README.md)
