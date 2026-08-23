@@ -39,7 +39,7 @@ class PanelRegistrationServiceTest {
 
 	/** Fake WO↔path table access (exists check only in these tests). */
 	@Mock
-	private WorkOrderRepository workOrderRepository;
+	private WoPpBindingRepository woPpBindingRepository;
 
 	/** Real service under test, wired with the mocks above. */
 	@InjectMocks
@@ -61,7 +61,7 @@ class PanelRegistrationServiceTest {
 	 */
 	@Test
 	void register_whenWorkOrderExistsAndPanelNew_savesAndReturnsResponse() {
-		when(workOrderRepository.existsById("WO-DEMO-001")).thenReturn(true);
+		when(woPpBindingRepository.existsById("WO-DEMO-001")).thenReturn(true);
 		when(panelRegistrationRepository.existsByPanelNumber("PANEL-DEMO-004")).thenReturn(false);
 		AtomicReference<LocalDateTime> registeredAtSentToSave = new AtomicReference<>();
 		// Simulate DB: IDENTITY id + DEFAULT CURRENT_TIMESTAMP for registered_at.
@@ -95,7 +95,7 @@ class PanelRegistrationServiceTest {
 	void register_trimsPanelAndWorkOrderIds() {
 		request.setPanelNumber("  PANEL-DEMO-004  ");
 		request.setWorkOrderId("  WO-DEMO-001  ");
-		when(workOrderRepository.existsById("WO-DEMO-001")).thenReturn(true);
+		when(woPpBindingRepository.existsById("WO-DEMO-001")).thenReturn(true);
 		when(panelRegistrationRepository.existsByPanelNumber("PANEL-DEMO-004")).thenReturn(false);
 		when(panelRegistrationRepository.save(any(PanelRegistrationEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -104,7 +104,7 @@ class PanelRegistrationServiceTest {
 		assertEquals("PANEL-DEMO-004", response.getPanelNumber());
 		assertEquals("WO-DEMO-001", response.getWorkOrderId());
 		// Lookups must use trimmed values.
-		verify(workOrderRepository).existsById("WO-DEMO-001");
+		verify(woPpBindingRepository).existsById("WO-DEMO-001");
 		verify(panelRegistrationRepository).existsByPanelNumber("PANEL-DEMO-004");
 	}
 
@@ -114,7 +114,7 @@ class PanelRegistrationServiceTest {
 	 */
 	@Test
 	void register_whenWorkOrderMissing_throwsNotFound() {
-		when(workOrderRepository.existsById("WO-DEMO-001")).thenReturn(false);
+		when(woPpBindingRepository.existsById("WO-DEMO-001")).thenReturn(false);
 
 		ResponseStatusException ex = assertThrows(
 				ResponseStatusException.class,
@@ -131,7 +131,7 @@ class PanelRegistrationServiceTest {
 	 */
 	@Test
 	void register_whenPanelAlreadyRegistered_throwsConflict() {
-		when(workOrderRepository.existsById("WO-DEMO-001")).thenReturn(true);
+		when(woPpBindingRepository.existsById("WO-DEMO-001")).thenReturn(true);
 		when(panelRegistrationRepository.existsByPanelNumber("PANEL-DEMO-004")).thenReturn(true);
 
 		ResponseStatusException ex = assertThrows(
@@ -148,7 +148,7 @@ class PanelRegistrationServiceTest {
 	 */
 	@Test
 	void register_whenSaveHitsIntegrityConstraint_throwsConflict() {
-		when(workOrderRepository.existsById("WO-DEMO-001")).thenReturn(true);
+		when(woPpBindingRepository.existsById("WO-DEMO-001")).thenReturn(true);
 		when(panelRegistrationRepository.existsByPanelNumber("PANEL-DEMO-004")).thenReturn(false);
 		when(panelRegistrationRepository.save(any(PanelRegistrationEntity.class)))
 				.thenThrow(new DataIntegrityViolationException("integrity"));

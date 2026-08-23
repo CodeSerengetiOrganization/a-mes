@@ -1,7 +1,9 @@
 package com.ames.mes_api;
 
 import com.ames.mes_api.panelregistration.PanelRegistrationRepository;
-import com.ames.mes_api.panelregistration.WorkOrderRepository;
+import com.ames.mes_api.panelregistration.WoPpBindingRepository;
+import com.ames.mes_api.processpath.ProcessPathRepository;
+import com.ames.mes_api.stationgate.OperationEventRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -22,7 +24,13 @@ class MesApiApplicationTests {
 	private PanelRegistrationRepository panelRegistrationRepository;
 
 	@MockitoBean
-	private WorkOrderRepository workOrderRepository;
+	private WoPpBindingRepository woPpBindingRepository;
+
+	@MockitoBean
+	private OperationEventRepository operationEventRepository;
+
+	@MockitoBean
+	private ProcessPathRepository processPathRepository;
 
 	@Test
 	void contextLoads() {
