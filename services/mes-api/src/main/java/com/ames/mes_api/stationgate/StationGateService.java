@@ -1,5 +1,6 @@
 package com.ames.mes_api.stationgate;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -12,6 +13,8 @@ import com.ames.mes_api.panelregistration.WoPpBindingEntity;
 import com.ames.mes_api.panelregistration.WoPpBindingRepository;
 import com.ames.mes_api.processpath.ProcessPathEntity;
 import com.ames.mes_api.processpath.ProcessPathRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,6 +24,7 @@ import tools.jackson.databind.ObjectMapper;
 
 @Service
 public class StationGateService {
+	public static final Logger logger = LoggerFactory.getLogger(StationGateService.class);
 	private static final Map<String, String> EQUIPMENT_TO_OP = Map.of(
 			"AEL-01-LOADER", "LOADER",
 			"AEL-01-COAT", "COAT",
@@ -55,6 +59,8 @@ public class StationGateService {
 	 */
 	@Transactional
 	public StationGateResponse evaluateGate(StationGateRequest request) {
+		logger.info("evaluateGate request: {}", request);
+		logger.info("evaluateGate request start timestamp:"+ Instant.now());
 		// Step 1: ORPHAN — no Panel Registration join (or join without WO)
 		Optional<PanelRegistrationEntity> panelRegEntity =
 				panelRegistrationRepository.findByPanelNumber(request.getSerialNumber());
@@ -95,8 +101,10 @@ public class StationGateService {
 		//step3.4: check the thisOp and expectedNext
 		if(thisOp.equals(expectedNext)) {
 			//todo: need to check how we use the reason code.
+			logger.info("evaluateGate request before return allow timestamp:"+Instant.now());
 			return allow(expectedNext);
 		}
+		logger.info("evaluateGate request before return deny timestamp:"+Instant.now());
 		return deny(expectedNext);
 
 	}
