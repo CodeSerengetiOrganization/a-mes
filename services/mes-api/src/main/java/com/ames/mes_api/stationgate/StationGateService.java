@@ -95,7 +95,7 @@ public class StationGateService {
 		//step3.4: check the thisOp and expectedNext
 		if(thisOp.equals(expectedNext)) {
 			//todo: need to check how we use the reason code.
-			return allow(null);
+			return allow(expectedNext);
 		}
 		return deny(expectedNext);
 
@@ -141,6 +141,7 @@ public class StationGateService {
 		StationGateResponse response = new StationGateResponse();
 		response.setAllowed(false);
 		response.setReasonCode(reasonCode);
+		System.out.println("response: " + response.toString());	//just for debugging
 		return response;
 	}
 
@@ -148,6 +149,7 @@ public class StationGateService {
 		StationGateResponse response = new StationGateResponse();
 		response.setAllowed(true);
 		response.setExpectedNext(expectedNext);
+		System.out.println("response: " + response.toString());	//just for debugging
 		return response;
 	}
 }

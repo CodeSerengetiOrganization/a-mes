@@ -41,4 +41,13 @@ public class StationGateResponse {
 	public void setOutcome(String outcome) {
 		this.outcome = outcome;
 	}
+
+	@Override
+	public String toString() {
+		return "StationGateResponse{allowed=" + allowed
+				+ ", expectedNext=" + expectedNext
+				+ ", reasonCode=" + reasonCode
+				+ ", outcome=" + outcome
+				+ '}';
+	}
 }
