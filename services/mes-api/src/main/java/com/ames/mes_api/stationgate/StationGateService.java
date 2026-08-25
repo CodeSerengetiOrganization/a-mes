@@ -1,6 +1,7 @@
 package com.ames.mes_api.stationgate;
 
-import java.time.Instant;
+import static java.util.Map.entry;
+
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -25,13 +26,29 @@ import tools.jackson.databind.ObjectMapper;
 @Service
 public class StationGateService {
 	public static final Logger logger = LoggerFactory.getLogger(StationGateService.class);
-	private static final Map<String, String> EQUIPMENT_TO_OP = Map.of(
-			"AEL-01-LOADER", "LOADER",
-			"AEL-01-COAT", "COAT",
-			"AEL-01-DEPANEL", "DEPANEL",
-			"AEL-01-CURE", "CURE",
-			"AEL-01-ASM", "ASM",
-			"AEL-01-PACK", "PACK");
+	/** Fixed station/tester → path op. Tech note 03 + plant AEL-01 IDs. */
+	private static final Map<String, String> EQUIPMENT_TO_OP = Map.ofEntries(
+			entry("AEL-01-LOADER", "LOADER"),
+			entry("AEL-01-COAT", "COAT"),
+			entry("AEL-01-UV", "UV"),
+			entry("AEL-01-DEPANEL", "DEPANEL"),
+			entry("AEL-01-CURE", "CURE"),
+			entry("AEL-01-ASM", "ASM"),
+			entry("AEL-01-COLD-EOL", "COLD_EOL"),
+			entry("AEL-01-HOT-EOL", "HOT_EOL"),
+			entry("AEL-01-AMBIENT-EOL", "AMBIENT_EOL"),
+			entry("AEL-01-PACK", "PACK"));
+
+	/**
+	 * Pattern 2 flexible EOL PC — one equipment_id; serial picks which EOL op (AS-4 spirit on
+	 * check). See tech note 01 / ticket-equipment-id-station-binding.
+	 */
+	private static final Set<String> FLEXIBLE_EOL_EQUIPMENT_IDS = Set.of("AEL-01-EOL-01");
+
+	private static final Set<String> EOL_OPS = Set.of("COLD_EOL", "HOT_EOL", "AMBIENT_EOL");
+
+	/** Sentinel thisOp when flexible EOL calls but path next is not an EOL op. */
+	private static final String FLEXIBLE_EOL_SENTINEL = "EOL";
 
 	private final PanelRegistrationRepository panelRegistrationRepository;
 	private final ProcessPathRepository processPathRepository;
@@ -40,98 +57,124 @@ public class StationGateService {
 	private final ObjectMapper objectMapper;
 
 	public StationGateService(
-            PanelRegistrationRepository panelRegistrationRepository,
-            ProcessPathRepository processPathRepository,
-            WoPpBindingRepository woPpBindingRepository, OperationEventRepository operationEventRepository,
-            ObjectMapper objectMapper) {
+			PanelRegistrationRepository panelRegistrationRepository,
+			ProcessPathRepository processPathRepository,
+			WoPpBindingRepository woPpBindingRepository,
+			OperationEventRepository operationEventRepository,
+			ObjectMapper objectMapper) {
 		this.panelRegistrationRepository = panelRegistrationRepository;
 		this.processPathRepository = processPathRepository;
 		this.woPpBindingRepository = woPpBindingRepository;
-        this.operationEventRepository = operationEventRepository;
-        this.objectMapper = objectMapper;
+		this.operationEventRepository = operationEventRepository;
+		this.objectMapper = objectMapper;
 	}
 
 	/*
-	 * check the serial number if it should be worked on current machine station
-	 * Steps:
-	 * Step 1: check ORPHAN;
-	 * Step 2: check if the process of current equipmentId is in the process path;
+	 * Gate check: may this serial be worked at this equipment now?
+	 * Step 1: ORPHAN — no Panel Registration join (or join without WO) → deny.
+	 * Step 2: known equipmentId? (EQUIPMENT_TO_OP or flexible EOL PC) — unknown → 400.
+	 * Step 3: load pathOps + completed ops (PASS/COMPLETE + LOADER via join) → expectedNext;
+	 *         resolve thisOp (map or Pattern 2 flexible EOL); then
+	 *         ALREADY_COMPLETE / allow / WRONG_STATION.
 	 */
-	@Transactional
+	@Transactional(readOnly = true)
 	public StationGateResponse evaluateGate(StationGateRequest request) {
-		logger.info("evaluateGate request: {}", request);
-		logger.info("evaluateGate request start timestamp:"+ Instant.now());
+		String serialNumber = request.getSerialNumber().trim();
+		String equipmentId = request.getEquipmentId().trim();
+		logger.info("evaluateGate start serialNumber={} equipmentId={}", serialNumber, equipmentId);
+
+		StationGateResponse response;
 		// Step 1: ORPHAN — no Panel Registration join (or join without WO)
 		Optional<PanelRegistrationEntity> panelRegEntity =
-				panelRegistrationRepository.findByPanelNumber(request.getSerialNumber());
+				panelRegistrationRepository.findByPanelNumber(serialNumber);
 		if (panelRegEntity.isEmpty() || panelRegEntity.get().getWorkOrderId() == null) {
-			return deny("ORPHAN");
+			response = deny("ORPHAN", null);
+			return logAndReturn(response);
 		}
 
-		//step2 : get the thisOp from the hard code map EQUIPMENT_TO_OP
-		String thisOp = EQUIPMENT_TO_OP.get(request.getEquipmentId());
-		if(thisOp == null) {
-			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown EQUIPMENT_ID: "+request.getEquipmentId());
+		// Step2: known equipment? (fixed map or flexible EOL PC) — unknown → 400
+		if (!EQUIPMENT_TO_OP.containsKey(equipmentId)
+				&& !FLEXIBLE_EOL_EQUIPMENT_IDS.contains(equipmentId)) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown EQUIPMENT_ID: " + equipmentId);
 		}
 
 		// Step3 : current Operation vs expectedNext Operation.
-		// current Operation: get it from a Map via equipmentId (step2)
-		// expectedNext Operation:serialNumber->workOrderId->processPathId->processPath, iterate the process path and check the evetSet to locate the first missing one;
-		// Step3.1: get the process path id from wo_pp_binding via
+		// current Operation: map via equipmentId (or Pattern 2 flexible EOL → current EOL next)
+		// expectedNext Operation:serialNumber->workOrderId->processPathId->processPath, iterate the process path and check the eventSet to locate the first missing one;
+		// Step3.1: get the process path id from wo_pp_binding
 		String workOrderId = panelRegEntity.get().getWorkOrderId();
-		System.out.println("workOrderId: " + workOrderId);
-		Optional<WoPpBindingEntity> woPpBindingEntity = woPpBindingRepository.findById(workOrderId);
-		String processPathId = woPpBindingEntity.map(WoPpBindingEntity::getProcessPathId).orElse(null);
-		System.out.println("processPathId: " + processPathId);
-		//step3.2 : get the process content and put into List
-		Optional<ProcessPathEntity> processPathOpt = processPathRepository.findById(processPathId);
-		String processPathContent = processPathOpt.get().getContent();
-		System.out.println("processPathContent: " + processPathContent);
-		//pick up the "ops" values and convert the string into ArrayList
-		List<String> pathOps = parseOrderedOps(processPathContent);
-		System.out.println("pathOps: " + pathOps);
+		WoPpBindingEntity woPpBinding = woPpBindingRepository
+				.findById(workOrderId)
+				.orElseThrow(() -> new ResponseStatusException(
+						HttpStatus.BAD_REQUEST, "work order binding not found: " + workOrderId));
+		String processPathId = woPpBinding.getProcessPathId();
+		if (processPathId == null || processPathId.isBlank()) {
+			throw new ResponseStatusException(
+					HttpStatus.BAD_REQUEST, "process path id missing for work order: " + workOrderId);
+		}
+		// Step3.2: get the process content and put into List
+		ProcessPathEntity processPath = processPathRepository
+				.findById(processPathId)
+				.orElseThrow(() -> new ResponseStatusException(
+						HttpStatus.BAD_REQUEST, "process path not found: " + processPathId));
+		// pick up the "ops" values and convert the string into ArrayList
+		List<String> pathOps = parseOrderedOps(processPath.getContent());
 
-		//step3.3 :get the operation list and convert operationEventList to a HashSet
-		List<OperationEventEntity> operationEventList = operationEventRepository.findBySerialNumberAndOutcomeInOrderByIdAsc(request.getSerialNumber(), List.of("PASS", "COMPLETE"));
+		// Step3.3: get the operation list and convert operationEventList to a HashSet
+		List<OperationEventEntity> operationEventList =
+				operationEventRepository.findBySerialNumberAndOutcomeInOrderByIdAsc(
+						serialNumber, List.of("PASS", "COMPLETE"));
 		Set<String> operationEventSet = operationEventList.stream()
 				.map(OperationEventEntity::getOpCode)
 				.collect(Collectors.toSet());
+		// Tech note 17: Panel Registration join means LOADER is done (no COMPLETE row required)
+		operationEventSet.add("LOADER");
 
-		String expectedNext = deriveNext(pathOps,operationEventSet);
-		//step3.4: check the thisOp and expectedNext
-		if(thisOp.equals(expectedNext)) {
-			//todo: need to check how we use the reason code.
-			logger.info("evaluateGate request before return allow timestamp:"+Instant.now());
-			return allow(expectedNext);
+		String expectedNext = deriveNext(pathOps, operationEventSet);
+		String thisOp = resolveThisOp(equipmentId, expectedNext);
+		// Step3.4: check the thisOp is Already COMPLETE or expectedNext
+		// Already COMPLETE at this station → deny with current path next (AS-3 AC)
+		if (operationEventSet.contains(thisOp)) {
+			response = deny("ALREADY_COMPLETE", expectedNext);
+		} else if (thisOp.equals(expectedNext)) {
+			response = allow(expectedNext);
+		} else {
+			response = deny("WRONG_STATION", expectedNext);
 		}
-		logger.info("evaluateGate request before return deny timestamp:"+Instant.now());
-		return deny(expectedNext);
+		return logAndReturn(response);
+	}
 
+	/**
+	 * Fixed benches: equipmentId → one path op. Flexible EOL PC: adopt expectedNext when it is an
+	 * EOL op; otherwise a non-path sentinel so comparison yields WRONG_STATION.
+	 */
+	private String resolveThisOp(String equipmentId, String expectedNext) {
+		if (FLEXIBLE_EOL_EQUIPMENT_IDS.contains(equipmentId)) {
+			if (expectedNext != null && EOL_OPS.contains(expectedNext)) {
+				return expectedNext;
+			}
+			return FLEXIBLE_EOL_SENTINEL;
+		}
+		return EQUIPMENT_TO_OP.get(equipmentId);
+	}
+
+	private StationGateResponse logAndReturn(StationGateResponse response) {
+		logger.info(
+				"evaluateGate end allowed={} reasonCode={} expectedNext={}",
+				response.isAllowed(),
+				response.getReasonCode(),
+				response.getExpectedNext());
+		return response;
 	}
 
 	private String deriveNext(List<String> pathOps, Set<String> operationEventSet) {
-		//iterate through the pathOps and check if the op is in the operationEventSet
-		for(String op : pathOps) {
-			if(!operationEventSet.contains(op)) {
+		// iterate through the pathOps and check if the op is in the operationEventSet
+		for (String op : pathOps) {
+			if (!operationEventSet.contains(op)) {
 				return op;
 			}
 		}
 		return null;
-	}
-
-	/*
-	 * Looks up Panel Registration for the serial. If there is no join row, or the join
-	 * has no work order, the serial is an orphan and the station gate must deny (AS-3).
-	 */
-	private boolean isOrphan(String serialNumber) {
-		Optional<PanelRegistrationEntity> panelRegistration =
-				panelRegistrationRepository.findByPanelNumber(serialNumber);
-		return panelRegistration.isEmpty() || panelRegistration.get().getWorkOrderId() == null;
-	}
-
-	/** True when this op appears on the process path (membership only — not expected-next). */
-	private boolean isOpOnProcessPath(String workOrder, List<String> pathOps) {
-		return false;
 	}
 
 	/** Parse process_path.content JSON → ordered ops list. */
@@ -145,11 +188,11 @@ public class StationGateService {
 		}
 	}
 
-	private StationGateResponse deny(String reasonCode) {
+	private StationGateResponse deny(String reasonCode, String expectedNext) {
 		StationGateResponse response = new StationGateResponse();
 		response.setAllowed(false);
 		response.setReasonCode(reasonCode);
-		System.out.println("response: " + response.toString());	//just for debugging
+		response.setExpectedNext(expectedNext);
 		return response;
 	}
 
@@ -157,7 +200,6 @@ public class StationGateService {
 		StationGateResponse response = new StationGateResponse();
 		response.setAllowed(true);
 		response.setExpectedNext(expectedNext);
-		System.out.println("response: " + response.toString());	//just for debugging
 		return response;
 	}
 }

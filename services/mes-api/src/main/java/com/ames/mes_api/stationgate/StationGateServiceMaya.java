@@ -28,13 +28,18 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 public class StationGateServiceMaya {
 
-	private static final Map<String, String> EQUIPMENT_TO_OP = Map.of(
-			"AEL-01-LOADER", "LOADER",
-			"AEL-01-COAT", "COAT",
-			"AEL-01-DEPANEL", "DEPANEL",
-			"AEL-01-CURE", "CURE",
-			"AEL-01-ASM", "ASM",
-			"AEL-01-PACK", "PACK");
+	private static final Map<String, String> EQUIPMENT_TO_OP = Map.ofEntries(
+			Map.entry("AEL-01-LOADER", "LOADER"),
+			Map.entry("AEL-01-COAT", "COAT"),
+			Map.entry("AEL-01-UV", "UV"),
+			Map.entry("AEL-01-DEPANEL", "DEPANEL"),
+			Map.entry("AEL-01-CURE", "CURE"),
+			Map.entry("AEL-01-ASM", "ASM"),
+			Map.entry("AEL-01-COLD-EOL", "COLD_EOL"),
+			Map.entry("AEL-01-HOT-EOL", "HOT_EOL"),
+			Map.entry("AEL-01-AMBIENT-EOL", "AMBIENT_EOL"),
+			Map.entry("AEL-01-PACK", "PACK"));
+	// Flexible EOL PC AEL-01-EOL-01: Pattern 2 — see StationGateService.resolveThisOp
 
 //	private final PanelRegistrationRepository panelRegistrationRepository;
 //	private final WoPpBindingRepository woPpBindingRepository;
