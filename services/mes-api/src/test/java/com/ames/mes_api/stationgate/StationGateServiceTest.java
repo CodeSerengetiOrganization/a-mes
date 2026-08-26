@@ -4,7 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.ames.mes_api.panelregistration.PanelRegistrationEntity;
@@ -13,11 +16,13 @@ import com.ames.mes_api.panelregistration.WoPpBindingEntity;
 import com.ames.mes_api.panelregistration.WoPpBindingRepository;
 import com.ames.mes_api.processpath.ProcessPathEntity;
 import com.ames.mes_api.processpath.ProcessPathRepository;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import tools.jackson.databind.json.JsonMapper;
@@ -242,6 +247,90 @@ class StationGateServiceTest {
 		assertFalse(response.isAllowed());
 		assertEquals("ORPHAN", response.getReasonCode());
 		assertNull(response.getExpectedNext());
+	}
+
+	@Test
+	void complete_whenCoatIsNext_appendsCompleteAndReturnsAllowed() {
+		stubJoinedPath("PANEL-DEMO-001", "WO-DEMO-001", "pp_cold_ambient");
+		when(operationEventRepository.findBySerialNumberAndOutcomeInOrderByIdAsc(
+						eq("PANEL-DEMO-001"), eq(List.of("PASS", "COMPLETE"))))
+				.thenReturn(List.of());
+
+		StationGateRequest request = new StationGateRequest();
+		request.setSerialNumber("PANEL-DEMO-001");
+		request.setEquipmentId("AEL-01-COAT");
+		request.setEquipmentLocalAt(LocalDateTime.of(2026, 8, 26, 8, 15));
+
+		StationGateResponse response = stationGateService.complete(request);
+
+		assertTrue(response.isAllowed());
+		assertEquals("COMPLETE", response.getOutcome());
+		assertEquals("COAT", response.getExpectedNext());
+
+		ArgumentCaptor<OperationEventEntity> saved = ArgumentCaptor.forClass(OperationEventEntity.class);
+		verify(operationEventRepository).save(saved.capture());
+		assertEquals("PANEL-DEMO-001", saved.getValue().getSerialNumber());
+		assertEquals("COAT", saved.getValue().getOpCode());
+		assertEquals("AEL-01-COAT", saved.getValue().getEquipmentId());
+		assertEquals("COMPLETE", saved.getValue().getOutcome());
+		assertEquals(LocalDateTime.of(2026, 8, 26, 8, 15), saved.getValue().getEquipmentLocalAt());
+	}
+
+	@Test
+	void complete_whenOrphan_doesNotSave() {
+		when(panelRegistrationRepository.findByPanelNumber("UNKNOWN-PANEL")).thenReturn(Optional.empty());
+
+		StationGateRequest request = new StationGateRequest();
+		request.setSerialNumber("UNKNOWN-PANEL");
+		request.setEquipmentId("AEL-01-COAT");
+		request.setEquipmentLocalAt(LocalDateTime.of(2026, 8, 26, 8, 15));
+
+		StationGateResponse response = stationGateService.complete(request);
+
+		assertFalse(response.isAllowed());
+		assertEquals("ORPHAN", response.getReasonCode());
+		assertNull(response.getOutcome());
+		verify(operationEventRepository, never()).save(any());
+	}
+
+	@Test
+	void complete_whenWrongStation_doesNotSave() {
+		stubJoinedPath("PANEL-DEMO-001", "WO-DEMO-001", "pp_cold_ambient");
+		when(operationEventRepository.findBySerialNumberAndOutcomeInOrderByIdAsc(
+						eq("PANEL-DEMO-001"), eq(List.of("PASS", "COMPLETE"))))
+				.thenReturn(List.of());
+
+		StationGateRequest request = new StationGateRequest();
+		request.setSerialNumber("PANEL-DEMO-001");
+		request.setEquipmentId("AEL-01-ASM");
+		request.setEquipmentLocalAt(LocalDateTime.of(2026, 8, 26, 8, 15));
+
+		StationGateResponse response = stationGateService.complete(request);
+
+		assertFalse(response.isAllowed());
+		assertEquals("WRONG_STATION", response.getReasonCode());
+		assertEquals("COAT", response.getExpectedNext());
+		verify(operationEventRepository, never()).save(any());
+	}
+
+	@Test
+	void complete_whenAlreadyComplete_doesNotSave() {
+		stubJoinedPath("PANEL-DEMO-001", "WO-DEMO-001", "pp_cold_ambient");
+		when(operationEventRepository.findBySerialNumberAndOutcomeInOrderByIdAsc(
+						eq("PANEL-DEMO-001"), eq(List.of("PASS", "COMPLETE"))))
+				.thenReturn(List.of(event("COAT", "COMPLETE")));
+
+		StationGateRequest request = new StationGateRequest();
+		request.setSerialNumber("PANEL-DEMO-001");
+		request.setEquipmentId("AEL-01-COAT");
+		request.setEquipmentLocalAt(LocalDateTime.of(2026, 8, 26, 8, 15));
+
+		StationGateResponse response = stationGateService.complete(request);
+
+		assertFalse(response.isAllowed());
+		assertEquals("ALREADY_COMPLETE", response.getReasonCode());
+		assertEquals("UV", response.getExpectedNext());
+		verify(operationEventRepository, never()).save(any());
 	}
 
 	private static OperationEventEntity event(String opCode, String outcome) {

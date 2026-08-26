@@ -1,19 +1,20 @@
-# API — Station skip-ahead gate (scan check + COMPLETE)
+# API — Station skip-ahead gate (scan check)
 
-**Story:** AS3-tech — Station skip-ahead gate  
+**Story:** AS3-tech — Station skip-ahead gate check  
+**Sibling (write path):** [`station-completes.md`](station-completes.md) — `POST /api/station-completes`  
 **Parent:** AS-3 — Stop skip-ahead at stations and Packing  
-**AC SoT:** `a-mes-docs` → `requirements/epic-a/AS3-stop-skip-ahead-at-stations-and-packing.md`  
+**AC SoT:** `a-mes-docs` → `requirements/epic-a/AS3-tech-station-skip-ahead-gate.md`  
 **Evidence direction:** `a-mes-docs` → `requirements/tech-notes/14-tech-note-as3-path-cursor-immutable-events-vs-state-machine.md`  
-**Package (proposed):** `com.ames.mes_api.stationgate`  
-**Status:** **Stage-1 contract freeze** (2026-08-16) — Kai picks applied by Sam · no OpenAPI yet
+**Package:** `com.ames.mes_api.stationgate`  
+**Status:** **Stage-1 contract freeze** (2026-08-16) — check slice · COMPLETE moved to [`station-completes.md`](station-completes.md) (AS3-02, 2026-08-26)
 
-Two verbs (same gate rules): **check** (scan / allow?) then **COMPLETE** (advance + append evidence). Do not merge into one vague “do everything” call.
+Two verbs (same gate **rules**): **check** (scan / allow?) then **COMPLETE** (append evidence). Do not merge into one vague “do everything” call.
+
+This document covers **check only**. Through COMPLETE append → [`station-completes.md`](station-completes.md).
 
 ---
 
-## Shared request fields
-
-Both endpoints take the same core body:
+## Shared request fields (check)
 
 ```json
 {
@@ -31,21 +32,24 @@ Client does **not** send “what I think next is.” MES owns next from path + p
 
 `workOrderId` is **not** required on the request — resolve via join (`panel_registration` / unit→WO). Orphan = no join.
 
+For COMPLETE, the same core fields apply plus required `equipmentLocalAt` — see [`station-completes.md`](station-completes.md).
+
 ---
 
-## HTTP status rules (frozen — Kai)
+## HTTP status rules (check — frozen)
 
 | Case | Status |
 |------|--------|
 | Allow or plant gate deny (orphan / wrong station / already COMPLETE) | **`200 OK`** + body (`allowed` true/false) |
 | Missing / blank fields; unknown `equipmentId` (stage 1) | **`400`** |
-| COMPLETE append hit **DB integrity race** (e.g. unique constraint after soft allow) | **`409`** — Panel Registration pattern; **not** for normal gate denies |
 
 Plant denies are successful gate **decisions**, not HTTP conflicts. Clients always read `allowed` / `reasonCode` / `expectedNext` on `200`.
 
+Check does **not** append evidence and does **not** use `409`.
+
 ---
 
-## 1) Check (scan gate)
+## Check (scan gate)
 
 | | |
 |--|--|
@@ -59,11 +63,11 @@ Plant denies are successful gate **decisions**, not HTTP conflicts. Clients alwa
 2. Resolve identity → work order (no join → **orphan**, `allowed: false`, `reasonCode: ORPHAN`)  
 3. Resolve `equipmentId` → this station’s **op** (unknown id → `400` stage 1)  
 4. Load process path + **current next**  
-5. If this op **already COMPLETE’d** for this serial → `allowed: false`, `reasonCode: ALREADY_COMPLETE` (UI can block before work; do not leave this to COMPLETE-only)  
+5. If this op is **already done** for this serial — any `outcome` in {`COMPLETE`, `PASS`} for this serial + op (same set as deriveNext / tech note 17; `FAIL` does not count) → `allowed: false`, `reasonCode: ALREADY_COMPLETE` (UI can block before work; do not leave this to COMPLETE-only). Align with [`station-completes.md`](station-completes.md).  
 6. If this op ≠ next → **wrong station** (`allowed: false`, `expectedNext` = next, `reasonCode: WRONG_STATION`)  
 7. Else → `allowed: true` (`expectedNext` = this op / next, `reasonCode: null`)
 
-Check does **not** append COMPLETE and does **not** advance next.
+Check does **not** append COMPLETE and does **not** advance next. Check denies (**`ORPHAN`**, **`WRONG_STATION`**, **`ALREADY_COMPLETE`**, …) are response-only — **never** insert into `operation_event` (no deny-as-`outcome`; table allows only `COMPLETE` / `PASS` / `FAIL` — see [`station-completes.md`](station-completes.md) Methodology).
 
 ### Response body (`200`)
 
@@ -99,7 +103,7 @@ Check does **not** append COMPLETE and does **not** advance next.
 |------|------|
 | `ORPHAN` | Serial not joined to any work order |
 | `WRONG_STATION` | Join OK but this op ≠ current next |
-| `ALREADY_COMPLETE` | This op already COMPLETE’d for this serial — **required on check** (Kai freeze) |
+| `ALREADY_COMPLETE` | This op **already done** — any `COMPLETE` **or** `PASS` for this serial + op (deriveNext set; Kai freeze 2026-08-26) — **required on check** |
 
 ### Error responses (check)
 
@@ -110,88 +114,15 @@ Check does **not** append COMPLETE and does **not** advance next.
 
 ---
 
-## 2) COMPLETE (through-station success)
-
-| | |
-|--|--|
-| **Method** | `POST` |
-| **Path** | `/api/station-completes` |
-| **Success** | `200 OK` |
-
-Same request body as check. Re-runs the **same gate**; only on allow:
-
-1. Append **immutable** through COMPLETE evidence (tech note 14) — **not** quality `PASS`  
-2. Advance **next** (cursor cache and/or derive-from-events)  
-3. Reject second COMPLETE at same op (`ALREADY_COMPLETE`) — next must **not** advance again  
-
-QUALITY PASS / FAIL for EOL is **AS-4** — out of this contract.
-
-### Response body (success — `200`)
-
-```json
-{
-  "allowed": true,
-  "serialNumber": "UNIT-DEMO-001",
-  "equipmentId": "AEL-01-COAT",
-  "workOrderId": "WO-DEMO-001",
-  "processPathId": "pp_cold_ambient",
-  "thisOp": "COAT",
-  "expectedNext": "UV",
-  "reasonCode": null,
-  "message": null,
-  "outcome": "COMPLETE"
-}
-```
-
-| Field | Type | Notes |
-|-------|------|-------|
-| *(same as check)* | | After success, `expectedNext` is the **following** through/quality step on the path |
-| `outcome` | string | Always `COMPLETE` on success — never `PASS` for through stations |
-
-### Response body (plant deny — `200`, same shape as check)
-
-Gate denies use **`200` + `allowed: false`** (same as check) — orphan / wrong station / already COMPLETE. Do **not** use `409` for these.
-
-| `reasonCode` | When |
-|--------------|------|
-| `ORPHAN` | No WO join |
-| `WRONG_STATION` | This op ≠ next (e.g. Pack while Ambient still next) |
-| `ALREADY_COMPLETE` | This op already COMPLETE’d for this serial |
-
-On successful deny body, omit `outcome` or set it null — only success carries `outcome: COMPLETE`.
-
-### Error responses (COMPLETE)
-
-| Status | When |
-|--------|------|
-| `400` | Missing / blank fields; unknown `equipmentId` |
-| `200` + `allowed: false` | Plant gate deny (orphan / wrong station / already COMPLETE) |
-| `409` | Soft gate passed (or race) but **DB integrity** failed on append — e.g. unique COMPLETE constraint / double-submit race. Map like Panel Registration; do **not** re-query in the same TX after failed INSERT. Prefer body with `reasonCode: ALREADY_COMPLETE` when that was the race. |
-
----
-
-## Persist (constraints — schema in PR)
-
-| Concern | Direction |
-|---------|-----------|
-| Orphan / join | Read `panel_registration` (and later unit join / seed) — **do not** write COMPLETE here |
-| Evidence SoT | Append-only through COMPLETE row (identity, op, `equipment_id`, time, outcome=`COMPLETE`) |
-| Next | Derive from path + events **or** thin cursor updated only from COMPLETE |
-| COMPLETE ≠ PASS | Never store through success as quality `PASS` |
-
-Exact table/column names: **AS3-tech PR** + update [`../schema.md`](../schema.md).
-
----
-
 ## Loader bootstrap (frozen — stage 1)
 
-**Option A:** Successful **Panel Registration** (`POST /api/panel-registrations`) means **`LOADER` is satisfied**. Do **not** require a separate `POST /api/station-completes` for `LOADER`.
+**Option A:** Successful **Panel Registration** (`POST /api/panel-registrations`) means **`LOADER` is satisfied**. Do **not** require a separate `POST /api/station-completes` for `LOADER`. Known Loader `equipmentId` on COMPLETE → **`WRONG_ENDPOINT`** (see [`station-completes.md`](station-completes.md)).
 
 | After join | First gate **next** |
 |------------|---------------------|
 | Panel on WO with path | **`COAT`** (second op on AS-1 seeded paths) |
 
-Operators must not COMPLETE Loader twice. Cursor / evidence init in the AS3-tech PR must honor this (append a LOADER COMPLETE on join, or seed next=`COAT` without a LOADER COMPLETE row — pick one persist style in the PR; behavior is Option A either way).
+Operators must not COMPLETE Loader twice. Cursor / evidence init must honor this (append a LOADER COMPLETE on join, or seed next=`COAT` without a LOADER COMPLETE row — pick one persist style in the PR; behavior is Option A either way).
 
 ---
 
@@ -202,31 +133,35 @@ Path JSON uses stable **op codes** (`LOADER`, `COAT`, `ASM`, `PACK`, …) from A
 
 Contract assumes a **server-side map** `equipmentId → op_code`. Mapping table freeze is enablement / PR — not Story AC.
 
+Non-through known ids (UV · EOL · Loader · Cold/Hot Chamber) on **check**: stage-1 behavior TBD in AS3-tech PR (prefer same `WRONG_ENDPOINT` fence as COMPLETE). **COMPLETE** handling for those classes is frozen in [`station-completes.md`](station-completes.md) → `200` + `WRONG_ENDPOINT`.
+
 ---
 
 ## Out of this contract
 
 | Out | Where |
 |-----|--------|
+| Through COMPLETE append | [`station-completes.md`](station-completes.md) (AS3-02) |
 | Panel Registration join | `/api/panel-registrations` (AS-2) |
-| EOL next-op / QUALITY PASS | AS-4 |
+| EOL / UV QUALITY PASS | AS-4 |
 | OpenAPI / Swagger | Optional later |
 | Soft warning / silent allow on wrong station | Forbidden (AS-3) |
-| `409` for normal plant gate denies | Forbidden — use `200` + `allowed: false` |
+| `409` for plant gate denies | Forbidden — use `200` + `allowed: false` |
 
 ---
 
-## AC → contract map (for PR ship bar)
+## AC → contract map (AS3-tech PR ship bar)
 
-| AS-3 / AS3-tech AC | Primary call |
-|--------------------|--------------|
-| 1 Wrong station + expected next | `POST .../station-gate-checks` → `200`, `allowed:false`, `expectedNext` |
-| 2 Allow + COMPLETE advances | check allow → `POST .../station-completes` → `200`, new `expectedNext` |
-| 3 COMPLETE ≠ PASS | `outcome: COMPLETE` only; persist rule |
-| 4 Double COMPLETE rejected | check and/or COMPLETE → `200`, `ALREADY_COMPLETE` |
-| 5–6 Pack deny / allow when next | same gate; Pack `equipmentId` |
-| 7 Orphan | either call → `200`, `ORPHAN` |
-| 8 DoD-7 | Do not claim ERP WO product in API docs/UI copy |
+| AS3-tech AC | Primary call |
+|-------------|--------------|
+| Wrong station + expected next | `POST .../station-gate-checks` → `200`, `allowed:false`, `expectedNext` |
+| Allow at correct station | `POST .../station-gate-checks` → `200`, `allowed:true` |
+| Already COMPLETE on check | → `200`, `ALREADY_COMPLETE` |
+| Pack deny / allow when next | same gate; Pack `equipmentId` |
+| Orphan | → `200`, `ORPHAN` |
+| DoD-7 | Do not claim ERP WO product in API docs/UI copy |
+
+COMPLETE append ACs → [`station-completes.md`](station-completes.md) (AS3-02).
 
 ---
 
@@ -235,15 +170,14 @@ Contract assumes a **server-side map** `equipmentId → op_code`. Mapping table 
 | Role | Status |
 |------|--------|
 | Sam (draft) | **Done (2026-08-16)** |
-| Jonathan revise | **Good enough (2026-08-16)** |
-| Kai approve (freeze) | **Re-review OK (2026-08-16)** — picks applied; residual notes below (non-blocking / sharpen in PR or tiny md fix) |
+| Jonathan revise | **Good enough (2026-08-16)** · **Split COMPLETE → station-completes.md (2026-08-26)** |
+| Kai approve (freeze) | **Re-review OK (2026-08-16)** — check slice; COMPLETE re-review pending on sibling doc |
 | Robert (SoT / naming) | **SoT OK (2026-08-16)** |
-| Sam (Kai picks into md) | **Done (2026-08-16)** — status → stage-1 contract freeze |
 
 ### Kai re-review notes (2026-08-16)
 
 | # | Severity | Note |
 |---|----------|------|
 | 1 | Sharpen | On `ALREADY_COMPLETE`, `expectedNext` = **current path next** — **applied (Sam 2026-08-16)** |
-| 2 | Implement → **frozen** | **Loader bootstrap (Option A):** Panel Registration join = `LOADER` satisfied; first gate **next = `COAT`**. No separate `station-completes` for `LOADER` (Jonathan 2026-08-16 · Kai lean) |
-| 3 | Implement | `equipmentId` → op map: stage 1 **through** ops only; EOL ids belong to AS-4 — reject or out-of-scope clearly in code |
+| 2 | Implement → **frozen** | **Loader bootstrap (Option A):** Panel Registration join = `LOADER` satisfied; first gate **next = `COAT`**. No separate `station-completes` for `LOADER` |
+| 3 | Implement | `equipmentId` → op map: stage 1 **through** ops on check; EOL/UV COMPLETE fence → [`station-completes.md`](station-completes.md) |

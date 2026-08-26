@@ -145,6 +145,40 @@ public class StationGateService {
 	}
 
 	/**
+	 * Through-station COMPLETE (AS3-02) — Maya draft, please review.
+	 * Reuses gate check; on allow, appends a COMPLETE row. Gate checking again is necessary as no one knows what could happen after gate checking before writing COMPLETE.
+	 */
+	@Transactional
+	public StationGateResponse complete(StationGateRequest request) {
+		String serialNumber = request.getSerialNumber().trim();
+		String equipmentId = request.getEquipmentId().trim();
+		logger.info("complete start serialNumber={} equipmentId={}", serialNumber, equipmentId);
+
+		StationGateResponse gate = evaluateGate(request);
+		if (!gate.isAllowed()) {
+			return logAndReturn(gate);
+		}
+
+		String thisOp = resolveThisOp(equipmentId, gate.getExpectedNext());
+
+		OperationEventEntity event = new OperationEventEntity();
+		event.setSerialNumber(serialNumber);
+		event.setOpCode(thisOp);
+		event.setEquipmentId(equipmentId);
+		event.setOutcome("COMPLETE");
+		event.setEquipmentLocalAt(request.getEquipmentLocalAt());
+		operationEventRepository.save(event);
+
+		gate.setOutcome("COMPLETE");
+		logger.info(
+				"complete end allowed={} outcome={} expectedNext={}",
+				gate.isAllowed(),
+				gate.getOutcome(),
+				gate.getExpectedNext());
+		return gate;
+	}
+
+	/**
 	 * Fixed benches: equipmentId → one path op. Flexible EOL PC: adopt expectedNext when it is an
 	 * EOL op; otherwise a non-path sentinel so comparison yields WRONG_STATION.
 	 */

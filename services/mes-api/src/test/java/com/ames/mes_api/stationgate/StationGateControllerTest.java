@@ -63,4 +63,46 @@ class StationGateControllerTest {
 
 		verify(stationGateService, never()).evaluateGate(any());
 	}
+
+	@Test
+	void complete_whenBodyValid_returns200WithOutcomeComplete() throws Exception {
+		StationGateResponse response = new StationGateResponse();
+		response.setAllowed(true);
+		response.setExpectedNext("UV");
+		response.setOutcome("COMPLETE");
+		when(stationGateService.complete(any(StationGateRequest.class))).thenReturn(response);
+
+		mockMvc.perform(post("/api/station-completes")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+								  "serialNumber": "PANEL-DEMO-001",
+								  "equipmentId": "AEL-01-COAT",
+								  "equipmentLocalAt": "2026-08-26T08:15:00"
+								}
+								"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.allowed").value(true))
+				.andExpect(jsonPath("$.outcome").value("COMPLETE"))
+				.andExpect(jsonPath("$.expectedNext").value("UV"));
+
+		verify(stationGateService).complete(any(StationGateRequest.class));
+		verify(stationGateService, never()).evaluateGate(any());
+	}
+
+	@Test
+	void complete_whenSerialNumberBlank_returns400AndDoesNotCallService() throws Exception {
+		mockMvc.perform(post("/api/station-completes")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+								  "serialNumber": "  ",
+								  "equipmentId": "AEL-01-COAT",
+								  "equipmentLocalAt": "2026-08-26T08:15:00"
+								}
+								"""))
+				.andExpect(status().isBadRequest());
+
+		verify(stationGateService, never()).complete(any());
+	}
 }
