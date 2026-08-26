@@ -4,7 +4,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.ames.mes_api.panelregistration.PanelRegistrationRepository;
-import com.ames.mes_api.panelregistration.WorkOrderRepository;
+import com.ames.mes_api.panelregistration.WoPpBindingRepository;
+import com.ames.mes_api.processpath.ProcessPathRepository;
+import com.ames.mes_api.stationgate.OperationEventRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -31,7 +33,13 @@ class ActuatorHealthTest {
 	private PanelRegistrationRepository panelRegistrationRepository;
 
 	@MockitoBean
-	private WorkOrderRepository workOrderRepository;
+	private WoPpBindingRepository woPpBindingRepository;
+
+	@MockitoBean
+	private ProcessPathRepository processPathRepository;
+
+	@MockitoBean
+	private OperationEventRepository operationEventRepository;
 
 	@Test
 	void liveness_returns200() throws Exception {

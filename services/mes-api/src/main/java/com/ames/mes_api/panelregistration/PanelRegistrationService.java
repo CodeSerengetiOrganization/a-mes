@@ -13,13 +13,13 @@ import org.springframework.web.server.ResponseStatusException;
 public class PanelRegistrationService {
 
 	private final PanelRegistrationRepository panelRegistrationRepository;
-	private final WorkOrderRepository workOrderRepository;
+	private final WoPpBindingRepository woPpBindingRepository;
 
 	public PanelRegistrationService(
 			PanelRegistrationRepository panelRegistrationRepository,
-			WorkOrderRepository workOrderRepository) {
+			WoPpBindingRepository woPpBindingRepository) {
 		this.panelRegistrationRepository = panelRegistrationRepository;
-		this.workOrderRepository = workOrderRepository;
+		this.woPpBindingRepository = woPpBindingRepository;
 	}
 
 	@Transactional
@@ -27,7 +27,7 @@ public class PanelRegistrationService {
 		String panelNumber = request.getPanelNumber().trim();
 		String workOrderId = request.getWorkOrderId().trim();
 
-		if (!workOrderRepository.existsById(workOrderId)) {
+		if (!woPpBindingRepository.existsById(workOrderId)) {
 			throw new ResponseStatusException(HttpStatus.NOT_FOUND, "work order not found: " + workOrderId);
 		}
 		if (panelRegistrationRepository.existsByPanelNumber(panelNumber)) {

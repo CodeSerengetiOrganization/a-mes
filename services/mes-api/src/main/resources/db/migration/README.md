@@ -9,6 +9,7 @@ Versioned SQL (Spring Boot default: `classpath:db/migration`):
 | `V3__create_work_order_and_panels.sql` | DDL + demo seed — WO↔path + panels |
 | `V4__panel_unique_and_wo_fk.sql` | UNIQUE(`panel_number`); FK `work_order_id` → `wo_pp_binding` |
 | `V5__rename_wo_management_to_panel_registration.sql` | Rename `wo_management` → `panel_registration` (+ constraint names) |
+| `V6__create_operation_event.sql` | DDL — `operation_event` (append-only COMPLETE / PASS / FAIL; no unique on serial+op) |
 
 Do not edit applied `V*` files on a shared DB; add a new version instead.
 
