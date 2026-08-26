@@ -25,7 +25,7 @@ import org.springframework.web.server.ResponseStatusException;
  * Step 3: path ops + events → next / already COMPLETE / wrong station.
  * Step 4 (complete only): on allow, append COMPLETE then return advanced expectedNext.
  */
-@Service
+/*@Service
 public class StationGateServiceMaya {
 
 	private static final Map<String, String> EQUIPMENT_TO_OP = Map.ofEntries(
@@ -41,11 +41,11 @@ public class StationGateServiceMaya {
 			Map.entry("AEL-01-PACK", "PACK"));
 	// Flexible EOL PC AEL-01-EOL-01: Pattern 2 — see StationGateService.resolveThisOp
 
-//	private final PanelRegistrationRepository panelRegistrationRepository;
-//	private final WoPpBindingRepository woPpBindingRepository;
-//	private final ProcessPathRepository processPathRepository;
-//	private final OperationEventRepository operationEventRepository;
-/*	private final ObjectMapper objectMapper;
+	private final PanelRegistrationRepository panelRegistrationRepository;
+	private final WoPpBindingRepository woPpBindingRepository;
+	private final ProcessPathRepository processPathRepository;
+	private final OperationEventRepository operationEventRepository;
+	private final ObjectMapper objectMapper;
 
 	public StationGateServiceMaya(
 			PanelRegistrationRepository panelRegistrationRepository,
@@ -136,9 +136,9 @@ public class StationGateServiceMaya {
 		return response;
 	}
 
-	*//**
+	*
 	 * Process path id → ops in path order (start → end).
-	 *//*
+
 	private List<String> loadOrderedPathOps(String processPathId) {
 		ProcessPathEntity path = processPathRepository
 				.findById(processPathId)
@@ -184,5 +184,5 @@ public class StationGateServiceMaya {
 			}
 		}
 		return null;
-	}*/
-}
+	}
+}*/
