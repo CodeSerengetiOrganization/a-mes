@@ -8,6 +8,7 @@ public class StationGateResponse {
 	private boolean allowed;
 	private String expectedNext;
 	private String reasonCode;
+	private String message;
 	private String outcome;
 
 	public boolean isAllowed() {
@@ -34,6 +35,14 @@ public class StationGateResponse {
 		this.reasonCode = reasonCode;
 	}
 
+	public String getMessage() {
+		return message;
+	}
+
+	public void setMessage(String message) {
+		this.message = message;
+	}
+
 	public String getOutcome() {
 		return outcome;
 	}
@@ -47,6 +56,7 @@ public class StationGateResponse {
 		return "StationGateResponse{allowed=" + allowed
 				+ ", expectedNext=" + expectedNext
 				+ ", reasonCode=" + reasonCode
+				+ ", message=" + message
 				+ ", outcome=" + outcome
 				+ '}';
 	}

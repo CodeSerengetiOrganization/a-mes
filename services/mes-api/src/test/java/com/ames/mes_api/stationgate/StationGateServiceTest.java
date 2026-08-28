@@ -3,6 +3,7 @@ package com.ames.mes_api.stationgate;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
@@ -25,6 +26,8 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.databind.json.JsonMapper;
 
 /**
@@ -265,7 +268,7 @@ class StationGateServiceTest {
 
 		assertTrue(response.isAllowed());
 		assertEquals("COMPLETE", response.getOutcome());
-		assertEquals("COAT", response.getExpectedNext());
+		assertEquals("UV", response.getExpectedNext());
 
 		ArgumentCaptor<OperationEventEntity> saved = ArgumentCaptor.forClass(OperationEventEntity.class);
 		verify(operationEventRepository).save(saved.capture());
@@ -274,6 +277,25 @@ class StationGateServiceTest {
 		assertEquals("AEL-01-COAT", saved.getValue().getEquipmentId());
 		assertEquals("COMPLETE", saved.getValue().getOutcome());
 		assertEquals(LocalDateTime.of(2026, 8, 26, 8, 15), saved.getValue().getEquipmentLocalAt());
+	}
+
+	@Test
+	void complete_whenEquipmentLocalAtMissing_throwsBadRequestAndDoesNotSave() {
+		stubJoinedPath("PANEL-DEMO-001", "WO-DEMO-001", "pp_cold_ambient");
+		when(operationEventRepository.findBySerialNumberAndOutcomeInOrderByIdAsc(
+						eq("PANEL-DEMO-001"), eq(List.of("PASS", "COMPLETE"))))
+				.thenReturn(List.of());
+
+		StationGateRequest request = new StationGateRequest();
+		request.setSerialNumber("PANEL-DEMO-001");
+		request.setEquipmentId("AEL-01-COAT");
+
+		ResponseStatusException ex =
+				assertThrows(ResponseStatusException.class, () -> stationGateService.complete(request));
+
+		assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+		assertEquals("equipmentLocalAt is required", ex.getReason());
+		verify(operationEventRepository, never()).save(any());
 	}
 
 	@Test
@@ -309,6 +331,99 @@ class StationGateServiceTest {
 
 		assertFalse(response.isAllowed());
 		assertEquals("WRONG_STATION", response.getReasonCode());
+		assertEquals("COAT", response.getExpectedNext());
+		verify(operationEventRepository, never()).save(any());
+	}
+
+	@Test
+	void complete_whenLoader_returnsWrongEndpointAndDoesNotSave() {
+		stubJoinedPath("PANEL-DEMO-001", "WO-DEMO-001", "pp_cold_ambient");
+		when(operationEventRepository.findBySerialNumberAndOutcomeInOrderByIdAsc(
+						eq("PANEL-DEMO-001"), eq(List.of("PASS", "COMPLETE"))))
+				.thenReturn(List.of());
+
+		StationGateRequest request = new StationGateRequest();
+		request.setSerialNumber("PANEL-DEMO-001");
+		request.setEquipmentId("AEL-01-LOADER");
+		request.setEquipmentLocalAt(LocalDateTime.of(2026, 8, 26, 8, 15));
+
+		StationGateResponse response = stationGateService.complete(request);
+
+		assertFalse(response.isAllowed());
+		assertEquals("WRONG_ENDPOINT", response.getReasonCode());
+		assertEquals("LOADER is satisfied by Panel Registration — not station-completes", response.getMessage());
+		assertEquals("COAT", response.getExpectedNext());
+		assertNull(response.getOutcome());
+		verify(operationEventRepository, never()).save(any());
+	}
+
+	@Test
+	void complete_whenUvIsNext_returnsWrongEndpointAndDoesNotSave() {
+		stubJoinedPath("PANEL-DEMO-001", "WO-DEMO-001", "pp_cold_ambient");
+		when(operationEventRepository.findBySerialNumberAndOutcomeInOrderByIdAsc(
+						eq("PANEL-DEMO-001"), eq(List.of("PASS", "COMPLETE"))))
+				.thenReturn(List.of(event("COAT", "COMPLETE")));
+
+		StationGateRequest request = new StationGateRequest();
+		request.setSerialNumber("PANEL-DEMO-001");
+		request.setEquipmentId("AEL-01-UV");
+		request.setEquipmentLocalAt(LocalDateTime.of(2026, 8, 26, 8, 15));
+
+		StationGateResponse response = stationGateService.complete(request);
+
+		assertFalse(response.isAllowed());
+		assertEquals("WRONG_ENDPOINT", response.getReasonCode());
+		assertEquals(
+				"Quality PASS/FAIL belongs on the quality API — not station-completes", response.getMessage());
+		assertEquals("UV", response.getExpectedNext());
+		verify(operationEventRepository, never()).save(any());
+	}
+
+	@Test
+	void complete_whenColdEolIsNext_returnsWrongEndpointAndDoesNotSave() {
+		stubJoinedPath("PANEL-DEMO-001", "WO-DEMO-001", "pp_cold_ambient");
+		when(operationEventRepository.findBySerialNumberAndOutcomeInOrderByIdAsc(
+						eq("PANEL-DEMO-001"), eq(List.of("PASS", "COMPLETE"))))
+				.thenReturn(List.of(
+						event("COAT", "COMPLETE"),
+						event("UV", "COMPLETE"),
+						event("DEPANEL", "COMPLETE"),
+						event("CURE", "COMPLETE"),
+						event("ASM", "COMPLETE")));
+
+		StationGateRequest request = new StationGateRequest();
+		request.setSerialNumber("PANEL-DEMO-001");
+		request.setEquipmentId("AEL-01-COLD-EOL");
+		request.setEquipmentLocalAt(LocalDateTime.of(2026, 8, 26, 8, 15));
+
+		StationGateResponse response = stationGateService.complete(request);
+
+		assertFalse(response.isAllowed());
+		assertEquals("WRONG_ENDPOINT", response.getReasonCode());
+		assertEquals(
+				"Quality PASS/FAIL belongs on the quality API — not station-completes", response.getMessage());
+		assertEquals("COLD_EOL", response.getExpectedNext());
+		verify(operationEventRepository, never()).save(any());
+	}
+
+	@Test
+	void complete_whenColdChamber_returnsWrongEndpointAndDoesNotSave() {
+		stubJoinedPath("PANEL-DEMO-001", "WO-DEMO-001", "pp_cold_ambient");
+		when(operationEventRepository.findBySerialNumberAndOutcomeInOrderByIdAsc(
+						eq("PANEL-DEMO-001"), eq(List.of("PASS", "COMPLETE"))))
+				.thenReturn(List.of());
+
+		StationGateRequest request = new StationGateRequest();
+		request.setSerialNumber("PANEL-DEMO-001");
+		request.setEquipmentId("AEL-01-COLD-CHAMBER");
+		request.setEquipmentLocalAt(LocalDateTime.of(2026, 8, 26, 8, 15));
+
+		StationGateResponse response = stationGateService.complete(request);
+
+		assertFalse(response.isAllowed());
+		assertEquals("WRONG_ENDPOINT", response.getReasonCode());
+		assertEquals(
+				"Chamber soak is not a station-completes step — no COMPLETE here", response.getMessage());
 		assertEquals("COAT", response.getExpectedNext());
 		verify(operationEventRepository, never()).save(any());
 	}
