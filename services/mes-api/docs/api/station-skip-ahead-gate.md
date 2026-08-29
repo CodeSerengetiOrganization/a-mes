@@ -71,11 +71,11 @@ Check does **not** append COMPLETE and does **not** advance next. Check denies (
 
 ### Response body (`200`)
 
+No request echoes — client already has `serialNumber` / `equipmentId`. MES-derived context + gate decision only.
+
 ```json
 {
   "allowed": false,
-  "serialNumber": "UNIT-DEMO-001",
-  "equipmentId": "AEL-01-ASM",
   "workOrderId": "WO-DEMO-001",
   "processPathId": "pp_cold_ambient",
   "thisOp": "ASM",
@@ -88,8 +88,6 @@ Check does **not** append COMPLETE and does **not** advance next. Check denies (
 | Field | Type | Notes |
 |-------|------|-------|
 | `allowed` | boolean | `true` = may work / may COMPLETE here; `false` = hard-block |
-| `serialNumber` | string | Echo |
-| `equipmentId` | string | Echo |
 | `workOrderId` | string \| null | Set when join found; `null` on orphan |
 | `processPathId` | string \| null | From `wo_pp_binding` when known |
 | `thisOp` | string \| null | Op implied by `equipmentId` |

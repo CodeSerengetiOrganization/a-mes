@@ -2,6 +2,7 @@ package com.ames.mes_api.stationgate;
 
 import jakarta.validation.Valid;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -21,16 +22,20 @@ public class StationGateController {
 		this.stationGateService = stationGateService;
 	}
 
-	/** Scan gate — allow / deny only (no append). */
+	/** Scan gate — allow / deny only (no append). {@code equipmentLocalAt} not required. */
 	@PostMapping("/station-gate-checks")
 	public ResponseEntity<StationGateResponse> check(@Valid @RequestBody StationGateRequest request) {
 		StationGateResponse body = stationGateService.evaluateGate(request);
 		return ResponseEntity.ok(body);
 	}
 
-	/** Through-station COMPLETE — append evidence when allowed. */
+	/**
+	 * Through-station COMPLETE — append evidence when allowed.
+	 * {@link StationGateRequest.OnComplete} requires {@code equipmentLocalAt}.
+	 */
 	@PostMapping("/station-completes")
-	public ResponseEntity<StationGateResponse> complete(@Valid @RequestBody StationGateRequest request) {
+	public ResponseEntity<StationGateResponse> complete(
+			@Validated(StationGateRequest.OnComplete.class) @RequestBody StationGateRequest request) {
 		StationGateResponse body = stationGateService.complete(request);
 		return ResponseEntity.ok(body);
 	}

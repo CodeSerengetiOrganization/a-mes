@@ -117,11 +117,11 @@ After a through COMPLETE, `expectedNext` may be a **quality** op (e.g. **UV**). 
 
 ## Response body — success (`200`, `allowed: true`)
 
+No request echoes — client already has `serialNumber` / `equipmentId`.
+
 ```json
 {
   "allowed": true,
-  "serialNumber": "UNIT-DEMO-001",
-  "equipmentId": "AEL-01-COAT",
   "workOrderId": "WO-DEMO-001",
   "processPathId": "pp_cold_ambient",
   "thisOp": "COAT",
@@ -135,8 +135,6 @@ After a through COMPLETE, `expectedNext` may be a **quality** op (e.g. **UV**). 
 | Field | Type | Notes |
 |-------|------|-------|
 | `allowed` | boolean | `true` |
-| `serialNumber` | string | Echo |
-| `equipmentId` | string | Echo |
 | `workOrderId` | string \| null | Set when join found; **`null` on `ORPHAN`** |
 | `processPathId` | string \| null | From `wo_pp_binding` when known; **`null` on `ORPHAN`** |
 | `thisOp` | string | Op implied by `equipmentId` |
@@ -158,8 +156,6 @@ Example `WRONG_STATION` (join exists):
 ```json
 {
   "allowed": false,
-  "serialNumber": "UNIT-DEMO-001",
-  "equipmentId": "AEL-01-COAT",
   "workOrderId": "WO-DEMO-001",
   "processPathId": "pp_cold_ambient",
   "thisOp": "COAT",
@@ -174,8 +170,6 @@ Example `ORPHAN` (no join — null WO / path / next):
 ```json
 {
   "allowed": false,
-  "serialNumber": "UNIT-UNKNOWN-001",
-  "equipmentId": "AEL-01-COAT",
   "workOrderId": null,
   "processPathId": null,
   "thisOp": "COAT",
@@ -199,8 +193,6 @@ Example `WRONG_ENDPOINT` (quality):
 ```json
 {
   "allowed": false,
-  "serialNumber": "UNIT-DEMO-001",
-  "equipmentId": "AEL-01-COLD-EOL",
   "workOrderId": "WO-DEMO-001",
   "processPathId": "pp_cold_ambient",
   "thisOp": "COLD_EOL",
@@ -215,8 +207,6 @@ Example `WRONG_ENDPOINT` (Loader — Option A):
 ```json
 {
   "allowed": false,
-  "serialNumber": "PANEL-DEMO-001",
-  "equipmentId": "AEL-01-LOADER",
   "workOrderId": "WO-DEMO-001",
   "processPathId": "pp_cold_ambient",
   "thisOp": "LOADER",
@@ -231,8 +221,6 @@ Example `WRONG_ENDPOINT` (Cold/Hot Chamber — non-path):
 ```json
 {
   "allowed": false,
-  "serialNumber": "UNIT-DEMO-001",
-  "equipmentId": "AEL-01-COLD-CHAMBER",
   "workOrderId": "WO-DEMO-001",
   "processPathId": "pp_cold_ambient",
   "thisOp": "COLD_CHAMBER",

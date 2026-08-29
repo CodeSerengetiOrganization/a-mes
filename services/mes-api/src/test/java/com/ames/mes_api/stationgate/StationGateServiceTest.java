@@ -81,6 +81,11 @@ class StationGateServiceTest {
 		assertTrue(response.isAllowed());
 		assertNull(response.getReasonCode());
 		assertEquals("COAT", response.getExpectedNext());
+		assertEquals("WO-DEMO-001", response.getWorkOrderId());
+		assertEquals("pp_cold_ambient", response.getProcessPathId());
+		assertEquals("COAT", response.getThisOp());
+		assertNull(response.getMessage());
+		assertNull(response.getOutcome());
 	}
 
 	@Test
@@ -217,6 +222,10 @@ class StationGateServiceTest {
 		assertFalse(response.isAllowed());
 		assertEquals("WRONG_STATION", response.getReasonCode());
 		assertEquals("COAT", response.getExpectedNext());
+		assertEquals("Expected next: COAT", response.getMessage());
+		assertEquals("EOL", response.getThisOp());
+		assertEquals("WO-DEMO-001", response.getWorkOrderId());
+		assertEquals("pp_cold_ambient", response.getProcessPathId());
 	}
 
 	@Test
@@ -232,6 +241,10 @@ class StationGateServiceTest {
 		assertFalse(response.isAllowed());
 		assertEquals("ORPHAN", response.getReasonCode());
 		assertNull(response.getExpectedNext());
+		assertNull(response.getWorkOrderId());
+		assertNull(response.getProcessPathId());
+		assertEquals("COAT", response.getThisOp());
+		assertEquals("Serial not joined to a work order", response.getMessage());
 	}
 
 	@Test
@@ -269,6 +282,11 @@ class StationGateServiceTest {
 		assertTrue(response.isAllowed());
 		assertEquals("COMPLETE", response.getOutcome());
 		assertEquals("UV", response.getExpectedNext());
+		assertEquals("WO-DEMO-001", response.getWorkOrderId());
+		assertEquals("pp_cold_ambient", response.getProcessPathId());
+		assertEquals("COAT", response.getThisOp());
+		assertNull(response.getReasonCode());
+		assertNull(response.getMessage());
 
 		ArgumentCaptor<OperationEventEntity> saved = ArgumentCaptor.forClass(OperationEventEntity.class);
 		verify(operationEventRepository).save(saved.capture());

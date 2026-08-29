@@ -61,6 +61,7 @@ public class StationGateService {
 	/** Sentinel thisOp when flexible EOL calls but path next is not an EOL op. */
 	private static final String FLEXIBLE_EOL_SENTINEL = "EOL";
 
+	private static final String MSG_ORPHAN = "Serial not joined to a work order";
 	private static final String MSG_WRONG_ENDPOINT_LOADER =
 			"LOADER is satisfied by Panel Registration — not station-completes";
 	private static final String MSG_WRONG_ENDPOINT_QUALITY =
@@ -154,7 +155,13 @@ public class StationGateService {
 		Optional<PanelRegistrationEntity> panelRegEntity =
 				panelRegistrationRepository.findByPanelNumber(serialNumber);
 		if (panelRegEntity.isEmpty() || panelRegEntity.get().getWorkOrderId() == null) {
-			return new GateEvaluation(deny("ORPHAN", null), List.of(), Set.of(), null);
+			String thisOpOrphan = resolveThisOpForEcho(equipmentId);
+			StationGateResponse orphan = attachMesContext(
+					deny("ORPHAN", null, MSG_ORPHAN),
+					null,
+					null,
+					thisOpOrphan);
+			return new GateEvaluation(orphan, List.of(), Set.of(), thisOpOrphan);
 		}
 
 		// Step2: known equipment? (fixed map or flexible EOL PC) — unknown → 400
@@ -173,6 +180,11 @@ public class StationGateService {
 		if (forComplete) {
 			StationGateResponse wrongEndpoint = denyIfWrongEndpoint(thisOp, expectedNext);
 			if (wrongEndpoint != null) {
+				attachMesContext(
+						wrongEndpoint,
+						pathContext.workOrderId(),
+						pathContext.processPathId(),
+						thisOp);
 				return new GateEvaluation(
 						wrongEndpoint, pathContext.pathOps(), pathContext.completedOps(), thisOp);
 			}
@@ -185,8 +197,16 @@ public class StationGateService {
 		} else if (thisOp.equals(expectedNext)) {
 			response = allow(expectedNext);
 		} else {
-			response = deny("WRONG_STATION", expectedNext);
+			response = deny(
+					"WRONG_STATION",
+					expectedNext,
+					expectedNext != null ? "Expected next: " + expectedNext : null);
 		}
+		attachMesContext(
+				response,
+				pathContext.workOrderId(),
+				pathContext.processPathId(),
+				thisOp);
 		return new GateEvaluation(response, pathContext.pathOps(), pathContext.completedOps(), thisOp);
 	}
 
@@ -235,13 +255,14 @@ public class StationGateService {
 				.collect(Collectors.toSet());
 		//Panel Registration join means LOADER is done (no COMPLETE row required)
 		completedOps.add(LOADER_OP);
-		return new PathContext(pathOps, completedOps);
+		return new PathContext(pathOps, completedOps, workOrderId, processPathId);
 	}
 
 	private record GateEvaluation(
 			StationGateResponse response, List<String> pathOps, Set<String> completedOps, String thisOp) {}
 
-	private record PathContext(List<String> pathOps, Set<String> completedOps) {}
+	private record PathContext(
+			List<String> pathOps, Set<String> completedOps, String workOrderId, String processPathId) {}
 
 	/**
 	 * If the machine is a fixed station: equipmentId → one path op. 
@@ -255,6 +276,26 @@ public class StationGateService {
 			return FLEXIBLE_EOL_SENTINEL;
 		}
 		return EQUIPMENT_TO_OP.get(equipmentId);
+	}
+
+	/** Echo thisOp on ORPHAN before path load (no expectedNext yet). */
+	private String resolveThisOpForEcho(String equipmentId) {
+		if (FLEXIBLE_EOL_EQUIPMENT_IDS.contains(equipmentId)) {
+			return FLEXIBLE_EOL_SENTINEL;
+		}
+		return EQUIPMENT_TO_OP.get(equipmentId);
+	}
+
+	/** Attach MES-derived context on every 200 body (no request echoes). */
+	private StationGateResponse attachMesContext(
+			StationGateResponse response,
+			String workOrderId,
+			String processPathId,
+			String thisOp) {
+		response.setWorkOrderId(workOrderId);
+		response.setProcessPathId(processPathId);
+		response.setThisOp(thisOp);
+		return response;
 	}
 
 	/** Log the response and return the response */
