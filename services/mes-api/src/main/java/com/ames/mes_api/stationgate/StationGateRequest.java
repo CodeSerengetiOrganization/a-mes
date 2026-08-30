@@ -5,9 +5,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.groups.Default;
 import java.time.LocalDateTime;
 
-/**
- * POST /api/station-gate-checks and /api/station-completes — request body (Maya draft — please review).
- */
+/** POST /api/station-gate-checks and /api/station-completes — request body. */
 public class StationGateRequest {
 
 	/** COMPLETE only — {@code equipmentLocalAt} required; extends {@link Default} so {@code @NotBlank} still runs. */

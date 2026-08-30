@@ -105,7 +105,7 @@ public class StationGateService {
 	}
 
 	/**
-	 * Through-station COMPLETE (AS3-02) — Maya draft, please review.
+	 * Through-station COMPLETE.
 	 * Reuses gate check; on allow, appends a COMPLETE row. Gate checking again is necessary as no one knows what could happen after gate checking before writing COMPLETE.
 	 */
 	@Transactional

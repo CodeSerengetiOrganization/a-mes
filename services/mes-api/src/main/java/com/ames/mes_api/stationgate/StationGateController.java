@@ -8,10 +8,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/**
- * Station skip-ahead gate — scan check + through COMPLETE (AS-3 / AS3-02).
- * Maya draft — please review.
- */
+/** Station skip-ahead gate — scan check + through COMPLETE. */
 @RestController
 @RequestMapping("/api")
 public class StationGateController {
