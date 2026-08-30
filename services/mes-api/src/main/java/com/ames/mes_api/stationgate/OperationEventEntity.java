@@ -11,7 +11,7 @@ import org.hibernate.annotations.Generated;
 import org.hibernate.generator.EventType;
 
 /**
- * Maps {@code operation_event} — station COMPLETE / quality result for a serial (Maya draft — please review).
+ * Maps {@code operation_event} — station COMPLETE / quality result for a serial.
  */
 @Entity
 @Table(name = "operation_event")
