@@ -6,7 +6,7 @@
 **AC SoT:** `a-mes-docs` → `requirements/epic-a/AS3-tech-station-skip-ahead-gate.md`  
 **Evidence direction:** `a-mes-docs` → `requirements/tech-notes/14-tech-note-as3-path-cursor-immutable-events-vs-state-machine.md`  
 **Package:** `com.ames.mes_api.stationgate`  
-**Status:** **Stage-1 contract freeze** (2026-08-16) — check slice · COMPLETE moved to [`station-completes.md`](station-completes.md) (AS3-02, 2026-08-26)
+**Status:** **Stage-1 contract freeze** (2026-08-16) — check slice · COMPLETE → [`station-completes.md`](station-completes.md) (AS3-02) · **non-through check behavior locked with AS3-02 (2026-08-30)**
 
 Two verbs (same gate **rules**): **check** (scan / allow?) then **COMPLETE** (append evidence). Do not merge into one vague “do everything” call.
 
@@ -114,13 +114,18 @@ No request echoes — client already has `serialNumber` / `equipmentId`. MES-der
 
 ## Loader bootstrap (frozen — stage 1)
 
-**Option A:** Successful **Panel Registration** (`POST /api/panel-registrations`) means **`LOADER` is satisfied**. Do **not** require a separate `POST /api/station-completes` for `LOADER`. Known Loader `equipmentId` on COMPLETE → **`WRONG_ENDPOINT`** (see [`station-completes.md`](station-completes.md)).
+**Option A:** Successful **Panel Registration** (`POST /api/panel-registrations`) means **`LOADER` is satisfied**. Do **not** require a separate `POST /api/station-completes` for `LOADER`.
+
+| Endpoint | Known Loader `equipmentId` (after join) |
+|----------|------------------------------------------|
+| Check | **`200` + `ALREADY_COMPLETE`**, `expectedNext` = path next (typically `COAT`) — join already marks Loader done |
+| COMPLETE | **`200` + `WRONG_ENDPOINT`** — Panel Registration only (see [`station-completes.md`](station-completes.md)) |
 
 | After join | First gate **next** |
 |------------|---------------------|
 | Panel on WO with path | **`COAT`** (second op on AS-1 seeded paths) |
 
-Operators must not COMPLETE Loader twice. Cursor / evidence init must honor this (append a LOADER COMPLETE on join, or seed next=`COAT` without a LOADER COMPLETE row — pick one persist style in the PR; behavior is Option A either way).
+Operators must not COMPLETE Loader. Persist style: seed next=`COAT` without a LOADER COMPLETE row (join counts as done) — Option A.
 
 ---
 
@@ -131,7 +136,19 @@ Path JSON uses stable **op codes** (`LOADER`, `COAT`, `ASM`, `PACK`, …) from A
 
 Contract assumes a **server-side map** `equipmentId → op_code`. Mapping table freeze is enablement / PR — not Story AC.
 
-Non-through known ids (UV · EOL · Loader · Cold/Hot Chamber) on **check**: stage-1 behavior TBD in AS3-tech PR (prefer same `WRONG_ENDPOINT` fence as COMPLETE). **COMPLETE** handling for those classes is frozen in [`station-completes.md`](station-completes.md) → `200` + `WRONG_ENDPOINT`.
+### Non-through known ids on **check** (frozen — AS3-02 / 2026-08-30)
+
+`WRONG_ENDPOINT` is a **COMPLETE write-path fence only** (see [`station-completes.md`](station-completes.md)). Check does **not** use that reason code. Known non-through equipment on check follows normal gate order:
+
+| Class | Example `equipmentId` | Check (`POST /api/station-gate-checks`) |
+|-------|----------------------|----------------------------------------|
+| Loader (after join) | `AEL-01-LOADER` | **`ALREADY_COMPLETE`** — join = Loader done; `expectedNext` = path next (e.g. `COAT`) |
+| Quality (UV / EOL) | `AEL-01-UV`, `…-EOL` | If that op **is** path next → **`allowed: true`**; else → **`WRONG_STATION`** |
+| Chamber (non-path) | `AEL-01-COLD-CHAMBER`, `AEL-01-HOT-CHAMBER` | **`WRONG_STATION`** (not on process path) |
+| Through | `AEL-01-COAT`, … | Allow / `WRONG_STATION` / `ALREADY_COMPLETE` as usual |
+| Unknown | garbage id | **`400`** |
+
+Same ids on **COMPLETE** → `WRONG_ENDPOINT` (Loader · quality · chamber) — frozen in sibling doc.
 
 ---
 
@@ -169,13 +186,13 @@ COMPLETE append ACs → [`station-completes.md`](station-completes.md) (AS3-02).
 |------|--------|
 | Sam (draft) | **Done (2026-08-16)** |
 | Jonathan revise | **Good enough (2026-08-16)** · **Split COMPLETE → station-completes.md (2026-08-26)** |
-| Kai approve (freeze) | **Re-review OK (2026-08-16)** — check slice; COMPLETE re-review pending on sibling doc |
+| Kai approve (freeze) | **OK (2026-08-16)** check slice · **non-through check matrix frozen (2026-08-30)** with AS3-02 |
 | Robert (SoT / naming) | **SoT OK (2026-08-16)** |
 
-### Kai re-review notes (2026-08-16)
+### Kai re-review notes
 
 | # | Severity | Note |
 |---|----------|------|
 | 1 | Sharpen | On `ALREADY_COMPLETE`, `expectedNext` = **current path next** — **applied (Sam 2026-08-16)** |
-| 2 | Implement → **frozen** | **Loader bootstrap (Option A):** Panel Registration join = `LOADER` satisfied; first gate **next = `COAT`**. No separate `station-completes` for `LOADER` |
-| 3 | Implement | `equipmentId` → op map: stage 1 **through** ops on check; EOL/UV COMPLETE fence → [`station-completes.md`](station-completes.md) |
+| 2 | Implement → **frozen** | **Loader bootstrap (Option A):** Panel Registration join = `LOADER` satisfied; first gate **next = `COAT`**. Check at Loader → `ALREADY_COMPLETE`; COMPLETE at Loader → `WRONG_ENDPOINT` |
+| 3 | Implement → **frozen (2026-08-30)** | Non-through on **check**: no `WRONG_ENDPOINT` — Loader / quality / chamber use `ALREADY_COMPLETE` · allow · `WRONG_STATION` as in table above. COMPLETE fence stays on sibling doc |

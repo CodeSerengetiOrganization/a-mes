@@ -8,7 +8,7 @@
 **Evidence:** `a-mes-docs` → `requirements/tech-notes/14-tech-note-as3-path-cursor-immutable-events-vs-state-machine.md`  
 **Gate vs UNIQUE:** `a-mes-docs` → `requirements/tech-notes/15-tech-note-as3-gate-in-mes-api-not-db-unique.md`  
 **Package:** `com.ames.mes_api.stationgate`  
-**Status:** **AS3-02 contract draft** (2026-08-26) — Jonathan draft · Kai review pending · no OpenAPI yet
+**Status:** **AS3-02 contract freeze** (2026-08-30) — Kai approved · implemented in `com.ames.mes_api.stationgate` · no OpenAPI yet
 
 Floor flow: **scan gate check** → operator works → **station COMPLETE** (tech note 19). Two verbs — do not merge.
 
@@ -315,6 +315,6 @@ Exact id list: enablement ticket + test doubles until floor bind lands. Do **not
 
 | Role | Status |
 |------|--------|
-| Jonathan (draft) | **Draft (2026-08-26)** |
-| Kai approve | Pending full freeze · **#1–#4** · **outcome ∈ {COMPLETE,PASS,FAIL} only — no deny rows (2026-08-26)** |
-| Robert (SoT / COMPLETE≠PASS) | Pending · sharpen #1–#4 · evidence-vs-deny methodology accepted |
+| Jonathan (draft) | **Draft (2026-08-26)** · response echoes dropped (request fields not re-sent) |
+| Kai approve | **Frozen (2026-08-30)** — COMPLETE write path · `WRONG_ENDPOINT` · outcome ∈ {COMPLETE,PASS,FAIL} only · no deny rows · check non-through matrix locked on sibling doc |
+| Robert (SoT / COMPLETE≠PASS) | **SoT OK** — evidence-vs-deny methodology · lean response (MES-derived fields only) |
