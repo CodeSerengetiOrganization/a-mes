@@ -32,6 +32,9 @@ class StationGateControllerTest {
 		StationGateResponse response = new StationGateResponse();
 		response.setAllowed(true);
 		response.setExpectedNext("COAT");
+		response.setWorkOrderId("WO-DEMO-001");
+		response.setProcessPathId("pp_cold_ambient");
+		response.setThisOp("COAT");
 		when(stationGateService.evaluateGate(any(StationGateRequest.class))).thenReturn(response);
 
 		mockMvc.perform(post("/api/station-gate-checks")
@@ -44,7 +47,12 @@ class StationGateControllerTest {
 								"""))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.allowed").value(true))
-				.andExpect(jsonPath("$.expectedNext").value("COAT"));
+				.andExpect(jsonPath("$.expectedNext").value("COAT"))
+				.andExpect(jsonPath("$.workOrderId").value("WO-DEMO-001"))
+				.andExpect(jsonPath("$.processPathId").value("pp_cold_ambient"))
+				.andExpect(jsonPath("$.thisOp").value("COAT"))
+				.andExpect(jsonPath("$.serialNumber").doesNotExist())
+				.andExpect(jsonPath("$.equipmentId").doesNotExist());
 
 		verify(stationGateService).evaluateGate(any(StationGateRequest.class));
 	}
@@ -62,5 +70,70 @@ class StationGateControllerTest {
 				.andExpect(status().isBadRequest());
 
 		verify(stationGateService, never()).evaluateGate(any());
+	}
+
+	@Test
+	void complete_whenBodyValid_returns200WithOutcomeComplete() throws Exception {
+		StationGateResponse response = new StationGateResponse();
+		response.setAllowed(true);
+		response.setExpectedNext("UV");
+		response.setOutcome("COMPLETE");
+		response.setWorkOrderId("WO-DEMO-001");
+		response.setProcessPathId("pp_cold_ambient");
+		response.setThisOp("COAT");
+		when(stationGateService.complete(any(StationGateRequest.class))).thenReturn(response);
+
+		mockMvc.perform(post("/api/station-completes")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+								  "serialNumber": "PANEL-DEMO-001",
+								  "equipmentId": "AEL-01-COAT",
+								  "equipmentLocalAt": "2026-08-26T08:15:00"
+								}
+								"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.allowed").value(true))
+				.andExpect(jsonPath("$.outcome").value("COMPLETE"))
+				.andExpect(jsonPath("$.expectedNext").value("UV"))
+				.andExpect(jsonPath("$.workOrderId").value("WO-DEMO-001"))
+				.andExpect(jsonPath("$.processPathId").value("pp_cold_ambient"))
+				.andExpect(jsonPath("$.thisOp").value("COAT"))
+				.andExpect(jsonPath("$.serialNumber").doesNotExist())
+				.andExpect(jsonPath("$.equipmentId").doesNotExist());
+
+		verify(stationGateService).complete(any(StationGateRequest.class));
+		verify(stationGateService, never()).evaluateGate(any());
+	}
+
+	@Test
+	void complete_whenSerialNumberBlank_returns400AndDoesNotCallService() throws Exception {
+		mockMvc.perform(post("/api/station-completes")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+								  "serialNumber": "  ",
+								  "equipmentId": "AEL-01-COAT",
+								  "equipmentLocalAt": "2026-08-26T08:15:00"
+								}
+								"""))
+				.andExpect(status().isBadRequest());
+
+		verify(stationGateService, never()).complete(any());
+	}
+
+	@Test
+	void complete_whenEquipmentLocalAtMissing_returns400AndDoesNotCallService() throws Exception {
+		mockMvc.perform(post("/api/station-completes")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+								  "serialNumber": "PANEL-DEMO-001",
+								  "equipmentId": "AEL-01-COAT"
+								}
+								"""))
+				.andExpect(status().isBadRequest());
+
+		verify(stationGateService, never()).complete(any());
 	}
 }
