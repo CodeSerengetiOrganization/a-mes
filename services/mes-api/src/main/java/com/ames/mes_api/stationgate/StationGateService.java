@@ -46,7 +46,7 @@ public class StationGateService {
 
 	/**
 	 * Pattern 2 flexible EOL PC — one equipment_id; serial picks which EOL op (AS-4 spirit on
-	 * check). See tech note 01 / ticket-equipment-id-station-binding.
+	 * check). See tech note 01 / AS3-equipment-id-station-binding.
 	 */
 	private static final Set<String> FLEXIBLE_EOL_EQUIPMENT_IDS = Set.of("AEL-01-EOL-01");
 
