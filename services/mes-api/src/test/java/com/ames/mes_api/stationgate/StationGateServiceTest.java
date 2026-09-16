@@ -62,7 +62,8 @@ class StationGateServiceTest {
 				processPathRepository,
 				woPpBindingRepository,
 				operationEventRepository,
-				new JsonMapper());
+				new JsonMapper(),
+				"COAT,DEPANEL,CURE,ASM,PACK");
 	}
 
 	@Test
@@ -265,6 +266,9 @@ class StationGateServiceTest {
 		assertNull(response.getExpectedNext());
 	}
 
+	/**
+	 * AS3-02 AC #1 — Next is Coating → COMPLETE at Coating → allowed; outcome=COMPLETE; expectedNext advances (e.g. UV).
+	 */
 	@Test
 	void complete_whenCoatIsNext_appendsCompleteAndReturnsAllowed() {
 		stubJoinedPath("PANEL-DEMO-001", "WO-DEMO-001", "pp_cold_ambient");
@@ -297,6 +301,39 @@ class StationGateServiceTest {
 		assertEquals(LocalDateTime.of(2026, 8, 26, 8, 15), saved.getValue().getEquipmentLocalAt());
 	}
 
+	/**
+	 * AS3-02 AC #4 — After Pack is next (Ambient PASS stubbed) → Pack COMPLETE → allowed + outcome=COMPLETE.
+	 */
+	@Test
+	void complete_whenPackIsNext_appendsCompleteAndReturnsAllowed() {
+		stubJoinedPath("PANEL-DEMO-001", "WO-DEMO-001", "pp_cold_ambient");
+		when(operationEventRepository.findBySerialNumberAndOutcomeInOrderByIdAsc(
+						eq("PANEL-DEMO-001"), eq(List.of("PASS", "COMPLETE"))))
+				.thenReturn(List.of(
+						event("COAT", "COMPLETE"),
+						event("UV", "PASS"),
+						event("DEPANEL", "COMPLETE"),
+						event("CURE", "COMPLETE"),
+						event("ASM", "COMPLETE"),
+						event("COLD_EOL", "PASS"),
+						event("AMBIENT_EOL", "PASS")));
+
+		StationGateRequest request = new StationGateRequest();
+		request.setSerialNumber("PANEL-DEMO-001");
+		request.setEquipmentId("AEL-01-PACK");
+		request.setEquipmentLocalAt(LocalDateTime.of(2026, 8, 26, 8, 15));
+
+		StationGateResponse response = stationGateService.complete(request);
+
+		assertTrue(response.isAllowed());
+		assertEquals("COMPLETE", response.getOutcome());
+		assertNull(response.getExpectedNext());
+		assertEquals("PACK", response.getThisOp());
+		assertNull(response.getReasonCode());
+		verify(operationEventRepository).save(any(OperationEventEntity.class));
+	}
+
+	/** Request validation — equipmentLocalAt required on COMPLETE (not an AS3-02 plant AC). */
 	@Test
 	void complete_whenEquipmentLocalAtMissing_throwsBadRequestAndDoesNotSave() {
 		stubJoinedPath("PANEL-DEMO-001", "WO-DEMO-001", "pp_cold_ambient");
@@ -316,8 +353,34 @@ class StationGateServiceTest {
 		verify(operationEventRepository, never()).save(any());
 	}
 
+	/**
+	 * AS3-02 AC #6 — Unknown equipmentId → 400 — not WRONG_ENDPOINT.
+	 */
 	@Test
-	void complete_whenOrphan_doesNotSave() {
+	void complete_whenUnknownEquipmentId_throwsBadRequestAndDoesNotSave() {
+		PanelRegistrationEntity join = new PanelRegistrationEntity();
+		join.setPanelNumber("PANEL-DEMO-001");
+		join.setWorkOrderId("WO-DEMO-001");
+		when(panelRegistrationRepository.findByPanelNumber("PANEL-DEMO-001")).thenReturn(Optional.of(join));
+
+		StationGateRequest request = new StationGateRequest();
+		request.setSerialNumber("PANEL-DEMO-001");
+		request.setEquipmentId("AEL-01-NOT-A-REAL-STATION");
+		request.setEquipmentLocalAt(LocalDateTime.of(2026, 8, 26, 8, 15));
+
+		ResponseStatusException ex =
+				assertThrows(ResponseStatusException.class, () -> stationGateService.complete(request));
+
+		assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+		assertEquals("Unknown EQUIPMENT_ID: AEL-01-NOT-A-REAL-STATION", ex.getReason());
+		verify(operationEventRepository, never()).save(any());
+	}
+
+	/**
+	 * AS3-02 AC #5 — Orphan serial → COMPLETE denied (allowed=false).
+	 */
+	@Test
+	void complete_whenOrphan_denyAndDoesNotSave() {
 		when(panelRegistrationRepository.findByPanelNumber("UNKNOWN-PANEL")).thenReturn(Optional.empty());
 
 		StationGateRequest request = new StationGateRequest();
@@ -333,8 +396,12 @@ class StationGateServiceTest {
 		verify(operationEventRepository, never()).save(any());
 	}
 
+	/**
+	 * AS3-02 AC #3 — Path next ≠ this op → WRONG_STATION + expectedNext; no operation_event append.
+	 * (Here: next=COAT, COMPLETE at ASM — same rule as COMPLETE at Coating when next is Assembly.)
+	 */
 	@Test
-	void complete_whenWrongStation_doesNotSave() {
+	void complete_whenWrongStation_denyAndDoesNotSave() {
 		stubJoinedPath("PANEL-DEMO-001", "WO-DEMO-001", "pp_cold_ambient");
 		when(operationEventRepository.findBySerialNumberAndOutcomeInOrderByIdAsc(
 						eq("PANEL-DEMO-001"), eq(List.of("PASS", "COMPLETE"))))
@@ -353,6 +420,9 @@ class StationGateServiceTest {
 		verify(operationEventRepository, never()).save(any());
 	}
 
+	/**
+	 * AS3-02 AC #8 — Known Loader equipmentId → WRONG_ENDPOINT (Option A; join satisfies LOADER).
+	 */
 	@Test
 	void complete_whenLoader_returnsWrongEndpointAndDoesNotSave() {
 		stubJoinedPath("PANEL-DEMO-001", "WO-DEMO-001", "pp_cold_ambient");
@@ -375,6 +445,9 @@ class StationGateServiceTest {
 		verify(operationEventRepository, never()).save(any());
 	}
 
+	/**
+	 * AS3-02 AC #7 — Known UV equipmentId → WRONG_ENDPOINT (quality API); not 400.
+	 */
 	@Test
 	void complete_whenUvIsNext_returnsWrongEndpointAndDoesNotSave() {
 		stubJoinedPath("PANEL-DEMO-001", "WO-DEMO-001", "pp_cold_ambient");
@@ -397,6 +470,9 @@ class StationGateServiceTest {
 		verify(operationEventRepository, never()).save(any());
 	}
 
+	/**
+	 * AS3-02 AC #7 — Known EOL equipmentId → WRONG_ENDPOINT (quality API); not 400.
+	 */
 	@Test
 	void complete_whenColdEolIsNext_returnsWrongEndpointAndDoesNotSave() {
 		stubJoinedPath("PANEL-DEMO-001", "WO-DEMO-001", "pp_cold_ambient");
@@ -424,6 +500,9 @@ class StationGateServiceTest {
 		verify(operationEventRepository, never()).save(any());
 	}
 
+	/**
+	 * Contract — Known Cold/Hot Chamber equipmentId → WRONG_ENDPOINT (soak ≠ COMPLETE).
+	 */
 	@Test
 	void complete_whenColdChamber_returnsWrongEndpointAndDoesNotSave() {
 		stubJoinedPath("PANEL-DEMO-001", "WO-DEMO-001", "pp_cold_ambient");
@@ -446,6 +525,9 @@ class StationGateServiceTest {
 		verify(operationEventRepository, never()).save(any());
 	}
 
+	/**
+	 * AS3-02 AC #2 — Second COMPLETE at Coating → ALREADY_COMPLETE; next does not advance again.
+	 */
 	@Test
 	void complete_whenAlreadyComplete_doesNotSave() {
 		stubJoinedPath("PANEL-DEMO-001", "WO-DEMO-001", "pp_cold_ambient");
