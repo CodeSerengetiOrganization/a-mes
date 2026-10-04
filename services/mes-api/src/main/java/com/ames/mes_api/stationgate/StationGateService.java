@@ -156,6 +156,11 @@ public class StationGateService {
 	/**
 	 * Append through-station COMPLETE evidence when the gate allows.
 	 *
+	 * <p>Takes {@code SELECT … FOR UPDATE} on the panel registration join row first so concurrent
+	 * COMPLETE requests for the same panel serialize (tech note 23). Stage-1 only: valid while the
+	 * scanned identity is a panel number — revisit at Depanel / AS-5 for unit serials. The lock is
+	 * released on commit/rollback; the join row is not updated by the lock itself. This is the approach to solve concurrent COMPLETE requests for the same panel.
+	 *
 	 * @param request station complete request
 	 * @return gate response with outcome COMPLETE on allow, or plant deny
 	 */
@@ -165,14 +170,17 @@ public class StationGateService {
 		String equipmentId = request.getEquipmentId().trim();
 		logger.info("complete start serialNumber={} equipmentId={}", serialNumber, equipmentId);
 
+		if (request.getEquipmentLocalAt() == null) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "equipmentLocalAt is required");
+		}
+
+		// Serialize concurrent COMPLETE per panel — lock join row (no panel UPDATE).
+		panelRegistrationRepository.findByPanelNumberForUpdate(serialNumber);
+
 		GateEvaluation evaluation = evaluateGateCore(serialNumber, equipmentId, true);
 		StationGateResponse gate = evaluation.response();
 		if (!gate.isAllowed()) {
 			return logAndReturn(gate);
-		}
-
-		if (request.getEquipmentLocalAt() == null) {
-			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "equipmentLocalAt is required");
 		}
 
 		OperationEventEntity event = new OperationEventEntity();

@@ -41,7 +41,7 @@ import tools.jackson.databind.ObjectMapper;
 @ActiveProfiles("local")
 @EnabledIfEnvironmentVariable(named = "MYSQL_PASSWORD", matches = ".+")
 @Transactional
-class StationGateIntegrationTest {
+public class StationGateIntegrationTest {
 
 	private static final String CHECK_PATH = "/api/station-gate-checks";
 	private static final String COMPLETE_PATH = "/api/station-completes";

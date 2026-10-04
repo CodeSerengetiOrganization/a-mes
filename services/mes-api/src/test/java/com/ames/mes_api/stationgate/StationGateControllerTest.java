@@ -22,7 +22,7 @@ import org.springframework.test.web.servlet.MockMvc;
  * (3) missing equipmentLocalAt → 400.
  */
 @WebMvcTest(controllers = StationGateController.class)
-class StationGateControllerTest {
+public class StationGateControllerTest {
 
 	private static final String COMPLETE_COAT_BODY = """
 			{

@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -36,7 +37,7 @@ import tools.jackson.databind.json.JsonMapper;
  * <p>Happy path: serial joined to a WO (LOADER via join rule), no events yet, scan at Coating → allowed.
  */
 @ExtendWith(MockitoExtension.class)
-class StationGateServiceTest {
+public class StationGateServiceTest {
 
 	private static final String PATH_CONTENT =
 			"{\"name\":\"Cold + Ambient\",\"ops\":[\"LOADER\",\"COAT\",\"UV\",\"DEPANEL\",\"CURE\",\"ASM\",\"COLD_EOL\",\"AMBIENT_EOL\",\"PACK\"]}";
@@ -336,11 +337,6 @@ class StationGateServiceTest {
 	/** Request validation — equipmentLocalAt required on COMPLETE (not an AS3-02 plant AC). */
 	@Test
 	void complete_whenEquipmentLocalAtMissing_throwsBadRequestAndDoesNotSave() {
-		stubJoinedPath("PANEL-DEMO-001", "WO-DEMO-001", "pp_cold_ambient");
-		when(operationEventRepository.findBySerialNumberAndOutcomeInOrderByIdAsc(
-						eq("PANEL-DEMO-001"), eq(List.of("PASS", "COMPLETE"))))
-				.thenReturn(List.of());
-
 		StationGateRequest request = new StationGateRequest();
 		request.setSerialNumber("PANEL-DEMO-001");
 		request.setEquipmentId("AEL-01-COAT");
@@ -351,6 +347,7 @@ class StationGateServiceTest {
 		assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
 		assertEquals("equipmentLocalAt is required", ex.getReason());
 		verify(operationEventRepository, never()).save(any());
+		verify(panelRegistrationRepository, never()).findByPanelNumberForUpdate(any());
 	}
 
 	/**
@@ -361,6 +358,8 @@ class StationGateServiceTest {
 		PanelRegistrationEntity join = new PanelRegistrationEntity();
 		join.setPanelNumber("PANEL-DEMO-001");
 		join.setWorkOrderId("WO-DEMO-001");
+		when(panelRegistrationRepository.findByPanelNumberForUpdate("PANEL-DEMO-001"))
+				.thenReturn(Optional.of(join));
 		when(panelRegistrationRepository.findByPanelNumber("PANEL-DEMO-001")).thenReturn(Optional.of(join));
 
 		StationGateRequest request = new StationGateRequest();
@@ -381,6 +380,8 @@ class StationGateServiceTest {
 	 */
 	@Test
 	void complete_whenOrphan_denyAndDoesNotSave() {
+		when(panelRegistrationRepository.findByPanelNumberForUpdate("UNKNOWN-PANEL"))
+				.thenReturn(Optional.empty());
 		when(panelRegistrationRepository.findByPanelNumber("UNKNOWN-PANEL")).thenReturn(Optional.empty());
 
 		StationGateRequest request = new StationGateRequest();
@@ -560,6 +561,10 @@ class StationGateServiceTest {
 		join.setPanelNumber(panelNumber);
 		join.setWorkOrderId(workOrderId);
 		when(panelRegistrationRepository.findByPanelNumber(panelNumber)).thenReturn(Optional.of(join));
+		// COMPLETE path only — lenient so evaluateGate tests do not fail unused stubbing.
+		lenient()
+				.when(panelRegistrationRepository.findByPanelNumberForUpdate(panelNumber))
+				.thenReturn(Optional.of(join));
 
 		WoPpBindingEntity binding = new WoPpBindingEntity();
 		binding.setWorkOrderId(workOrderId);
