@@ -549,6 +549,167 @@ public class StationGateServiceTest {
 		verify(operationEventRepository, never()).save(any());
 	}
 
+	@Test
+	void recordQuality_whenUvIsNext_passAppendsAndAdvances() {
+		stubJoinedPath("PANEL-DEMO-001", "WO-DEMO-001", "pp_cold_ambient");
+		when(operationEventRepository.findBySerialNumberAndOutcomeInOrderByIdAsc(
+						eq("PANEL-DEMO-001"), eq(List.of("PASS", "COMPLETE"))))
+				.thenReturn(List.of(event("COAT", "COMPLETE")));
+
+		StationGateResponse response =
+				stationGateService.recordQuality(qualityRequest("AEL-01-UV"), "PASS");
+
+		assertTrue(response.isAllowed());
+		assertEquals("PASS", response.getOutcome());
+		assertEquals("DEPANEL", response.getExpectedNext());
+		assertEquals("UV", response.getThisOp());
+		assertNull(response.getReasonCode());
+
+		ArgumentCaptor<OperationEventEntity> saved = ArgumentCaptor.forClass(OperationEventEntity.class);
+		verify(operationEventRepository).save(saved.capture());
+		assertEquals("UV", saved.getValue().getOpCode());
+		assertEquals("PASS", saved.getValue().getOutcome());
+		assertEquals("AEL-01-UV", saved.getValue().getEquipmentId());
+	}
+
+	@Test
+	void recordQuality_whenUvIsNext_failAppendsAndDoesNotAdvance() {
+		stubJoinedPath("PANEL-DEMO-001", "WO-DEMO-001", "pp_cold_ambient");
+		when(operationEventRepository.findBySerialNumberAndOutcomeInOrderByIdAsc(
+						eq("PANEL-DEMO-001"), eq(List.of("PASS", "COMPLETE"))))
+				.thenReturn(List.of(event("COAT", "COMPLETE")));
+
+		StationGateResponse response =
+				stationGateService.recordQuality(qualityRequest("AEL-01-UV"), "FAIL");
+
+		assertTrue(response.isAllowed());
+		assertEquals("FAIL", response.getOutcome());
+		assertEquals("UV", response.getExpectedNext());
+		verify(operationEventRepository).save(any(OperationEventEntity.class));
+	}
+
+	@Test
+	void recordQuality_whenCoatIsNext_coatReturnsWrongEndpointAndDoesNotSave() {
+		stubJoinedPath("PANEL-DEMO-001", "WO-DEMO-001", "pp_cold_ambient");
+		when(operationEventRepository.findBySerialNumberAndOutcomeInOrderByIdAsc(
+						eq("PANEL-DEMO-001"), eq(List.of("PASS", "COMPLETE"))))
+				.thenReturn(List.of());
+
+		StationGateResponse response =
+				stationGateService.recordQuality(qualityRequest("AEL-01-COAT"), "PASS");
+
+		assertFalse(response.isAllowed());
+		assertEquals("WRONG_ENDPOINT", response.getReasonCode());
+		assertEquals(
+				"Through COMPLETE belongs on station-completes — not the quality API", response.getMessage());
+		assertNull(response.getOutcome());
+		verify(operationEventRepository, never()).save(any());
+	}
+
+	@Test
+	void recordQuality_whenUvIsNext_assemblyReturnsWrongEndpointAndDoesNotSave() {
+		stubJoinedPath("PANEL-DEMO-001", "WO-DEMO-001", "pp_cold_ambient");
+		when(operationEventRepository.findBySerialNumberAndOutcomeInOrderByIdAsc(
+						eq("PANEL-DEMO-001"), eq(List.of("PASS", "COMPLETE"))))
+				.thenReturn(List.of(event("COAT", "COMPLETE")));
+
+		StationGateResponse response =
+				stationGateService.recordQuality(qualityRequest("AEL-01-ASM"), "PASS");
+
+		assertFalse(response.isAllowed());
+		assertEquals("WRONG_ENDPOINT", response.getReasonCode());
+		assertEquals("UV", response.getExpectedNext());
+		verify(operationEventRepository, never()).save(any());
+	}
+
+	@Test
+	void recordQuality_whenAlreadyPassed_doesNotSave() {
+		stubJoinedPath("PANEL-DEMO-001", "WO-DEMO-001", "pp_cold_ambient");
+		when(operationEventRepository.findBySerialNumberAndOutcomeInOrderByIdAsc(
+						eq("PANEL-DEMO-001"), eq(List.of("PASS", "COMPLETE"))))
+				.thenReturn(List.of(event("COAT", "COMPLETE"), event("UV", "PASS")));
+
+		StationGateResponse response =
+				stationGateService.recordQuality(qualityRequest("AEL-01-UV"), "PASS");
+
+		assertFalse(response.isAllowed());
+		assertEquals("ALREADY_COMPLETE", response.getReasonCode());
+		assertEquals("DEPANEL", response.getExpectedNext());
+		verify(operationEventRepository, never()).save(any());
+	}
+
+	@Test
+	void recordQuality_whenOrphan_denyAndDoesNotSave() {
+		when(panelRegistrationRepository.findByPanelNumberForUpdate("UNKNOWN-PANEL"))
+				.thenReturn(Optional.empty());
+		when(panelRegistrationRepository.findByPanelNumber("UNKNOWN-PANEL")).thenReturn(Optional.empty());
+
+		StationGateRequest request = qualityRequest("AEL-01-UV");
+		request.setSerialNumber("UNKNOWN-PANEL");
+
+		StationGateResponse response = stationGateService.recordQuality(request, "PASS");
+
+		assertFalse(response.isAllowed());
+		assertEquals("ORPHAN", response.getReasonCode());
+		verify(operationEventRepository, never()).save(any());
+	}
+
+	@Test
+	void recordQuality_whenColdChamber_returnsWrongEndpointAndDoesNotSave() {
+		stubJoinedPath("PANEL-DEMO-001", "WO-DEMO-001", "pp_cold_ambient");
+		when(operationEventRepository.findBySerialNumberAndOutcomeInOrderByIdAsc(
+						eq("PANEL-DEMO-001"), eq(List.of("PASS", "COMPLETE"))))
+				.thenReturn(List.of());
+
+		StationGateResponse response =
+				stationGateService.recordQuality(qualityRequest("AEL-01-COLD-CHAMBER"), "PASS");
+
+		assertFalse(response.isAllowed());
+		assertEquals("WRONG_ENDPOINT", response.getReasonCode());
+		assertEquals("Chamber soak is not a quality PASS/FAIL step", response.getMessage());
+		verify(operationEventRepository, never()).save(any());
+	}
+
+	@Test
+	void recordQuality_whenUnknownEquipmentId_throwsBadRequestAndDoesNotSave() {
+		PanelRegistrationEntity join = new PanelRegistrationEntity();
+		join.setPanelNumber("PANEL-DEMO-001");
+		join.setWorkOrderId("WO-DEMO-001");
+		when(panelRegistrationRepository.findByPanelNumberForUpdate("PANEL-DEMO-001"))
+				.thenReturn(Optional.of(join));
+		when(panelRegistrationRepository.findByPanelNumber("PANEL-DEMO-001")).thenReturn(Optional.of(join));
+
+		StationGateRequest request = qualityRequest("AEL-01-NOT-A-REAL-STATION");
+
+		ResponseStatusException ex = assertThrows(
+				ResponseStatusException.class, () -> stationGateService.recordQuality(request, "PASS"));
+
+		assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+		assertEquals("Unknown EQUIPMENT_ID: AEL-01-NOT-A-REAL-STATION", ex.getReason());
+		verify(operationEventRepository, never()).save(any());
+	}
+
+	@Test
+	void recordQuality_whenOutcomeNotPassOrFail_throwsBadRequestAndDoesNotSave() {
+		StationGateRequest request = qualityRequest("AEL-01-UV");
+
+		ResponseStatusException ex = assertThrows(
+				ResponseStatusException.class, () -> stationGateService.recordQuality(request, "COMPLETE"));
+
+		assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+		assertEquals("outcome must be PASS or FAIL", ex.getReason());
+		verify(operationEventRepository, never()).save(any());
+		verify(panelRegistrationRepository, never()).findByPanelNumberForUpdate(any());
+	}
+
+	private static StationGateRequest qualityRequest(String equipmentId) {
+		StationGateRequest request = new StationGateRequest();
+		request.setSerialNumber("PANEL-DEMO-001");
+		request.setEquipmentId(equipmentId);
+		request.setEquipmentLocalAt(LocalDateTime.of(2026, 8, 26, 8, 15));
+		return request;
+	}
+
 	private static OperationEventEntity event(String opCode, String outcome) {
 		OperationEventEntity e = new OperationEventEntity();
 		e.setOpCode(opCode);

@@ -15,7 +15,7 @@ public class StationGateResponse {
 	private String expectedNext;
 	private String reasonCode;
 	private String message;
-	/** Set on successful COMPLETE append; null on check and plant denies. */
+	/** Set on successful COMPLETE / PASS / FAIL append; null on check and plant denies. */
 	private String outcome;
 
 	public boolean isAllowed() {
