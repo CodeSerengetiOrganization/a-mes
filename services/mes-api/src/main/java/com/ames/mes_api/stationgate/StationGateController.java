@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-/** Station skip-ahead gate — scan check + through COMPLETE. */
+/** Station skip-ahead gate — scan check + through COMPLETE + quality PASS/FAIL. */
 @RestController
 @RequestMapping("/api")
 public class StationGateController {
@@ -34,6 +34,17 @@ public class StationGateController {
 	public ResponseEntity<StationGateResponse> complete(
 			@Validated(StationGateRequest.OnComplete.class) @RequestBody StationGateRequest request) {
 		StationGateResponse body = stationGateService.complete(request);
+		return ResponseEntity.ok(body);
+	}
+
+	/**
+	 * Quality PASS/FAIL — append evidence when allowed.
+	 * {@link StationGateRequest.OnQuality} requires {@code equipmentLocalAt} and {@code outcome}.
+	 */
+	@PostMapping("/station-quality-results")
+	public ResponseEntity<StationGateResponse> recordQuality(
+			@Validated(StationGateRequest.OnQuality.class) @RequestBody StationGateRequest request) {
+		StationGateResponse body = stationGateService.recordQuality(request, request.getOutcome());
 		return ResponseEntity.ok(body);
 	}
 }

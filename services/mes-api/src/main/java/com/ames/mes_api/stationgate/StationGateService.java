@@ -80,6 +80,20 @@ public class StationGateService {
 			"Chamber soak is not a station-completes step — no COMPLETE here";
 	private static final String MSG_WRONG_ENDPOINT_NOT_THROUGH =
 			"This station cannot append COMPLETE via station-completes";
+	private static final String MSG_WRONG_ENDPOINT_THROUGH_ON_QUALITY =
+			"Through COMPLETE belongs on station-completes — not the quality API";
+	private static final String MSG_WRONG_ENDPOINT_LOADER_ON_QUALITY =
+			"LOADER is satisfied by Panel Registration — not the quality API";
+	private static final String MSG_WRONG_ENDPOINT_CHAMBER_ON_QUALITY =
+			"Chamber soak is not a quality PASS/FAIL step";
+	private static final String MSG_WRONG_ENDPOINT_NOT_QUALITY =
+			"This station cannot append PASS/FAIL via the quality API";
+
+	private enum EndpointKind {
+		CHECK,
+		COMPLETE,
+		QUALITY
+	}
 
 	/**
 	 * Through ops that may append COMPLETE via station-completes (whitelist — fail-closed).
@@ -150,7 +164,7 @@ public class StationGateService {
 		String serialNumber = request.getSerialNumber().trim();
 		String equipmentId = request.getEquipmentId().trim();
 		logger.info("evaluateGate start serialNumber={} equipmentId={}", serialNumber, equipmentId);
-		return logAndReturn(evaluateGateCore(serialNumber, equipmentId, false).response());
+		return logAndReturn(evaluateGateCore(serialNumber, equipmentId, EndpointKind.CHECK).response());
 	}
 
 	/**
@@ -169,15 +183,58 @@ public class StationGateService {
 		String serialNumber = request.getSerialNumber().trim();
 		String equipmentId = request.getEquipmentId().trim();
 		logger.info("complete start serialNumber={} equipmentId={}", serialNumber, equipmentId);
+		return appendAllowedOutcome(request, serialNumber, equipmentId, "COMPLETE", EndpointKind.COMPLETE);
+	}
 
+	/**
+	 * Append quality PASS/FAIL evidence when the gate allows.
+	 *
+	 * <p>Same lock and gate as {@link #complete} — inverted class fence (quality ops only).
+	 * PASS advances path; FAIL is stored and expected next stays.
+	 *
+	 * @param request station quality request ({@code serialNumber}, {@code equipmentId}, {@code equipmentLocalAt})
+	 * @param outcome {@code PASS} or {@code FAIL}
+	 * @return gate response with outcome on allow, or plant deny
+	 */
+	@Transactional
+	public StationGateResponse recordQuality(StationGateRequest request, String outcome) {
+		String serialNumber = request.getSerialNumber().trim();
+		String equipmentId = request.getEquipmentId().trim();
+		logger.info(
+				"recordQuality start serialNumber={} equipmentId={} outcome={}",
+				serialNumber,
+				equipmentId,
+				outcome);
+		if (outcome == null || !("PASS".equals(outcome) || "FAIL".equals(outcome))) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "outcome must be PASS or FAIL");
+		}
+		return appendAllowedOutcome(request, serialNumber, equipmentId, outcome, EndpointKind.QUALITY);
+	}
+
+	/**
+	 * Lock, evaluate, append {@code operation_event} when allowed.
+	 *
+	 * @param request original request (for {@code equipmentLocalAt})
+	 * @param serialNumber trimmed serial
+	 * @param equipmentId trimmed equipment id
+	 * @param outcome COMPLETE, PASS, or FAIL
+	 * @param kind COMPLETE or QUALITY write path
+	 * @return gate response
+	 */
+	private StationGateResponse appendAllowedOutcome(
+			StationGateRequest request,
+			String serialNumber,
+			String equipmentId,
+			String outcome,
+			EndpointKind kind) {
 		if (request.getEquipmentLocalAt() == null) {
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "equipmentLocalAt is required");
 		}
 
-		// Serialize concurrent COMPLETE per panel — lock join row (no panel UPDATE).
+		// Serialize concurrent writes per panel — lock join row (no panel UPDATE).
 		panelRegistrationRepository.findByPanelNumberForUpdate(serialNumber);
 
-		GateEvaluation evaluation = evaluateGateCore(serialNumber, equipmentId, true);
+		GateEvaluation evaluation = evaluateGateCore(serialNumber, equipmentId, kind);
 		StationGateResponse gate = evaluation.response();
 		if (!gate.isAllowed()) {
 			return logAndReturn(gate);
@@ -187,17 +244,25 @@ public class StationGateService {
 		event.setSerialNumber(serialNumber);
 		event.setOpCode(evaluation.thisOp());
 		event.setEquipmentId(equipmentId);
-		event.setOutcome("COMPLETE");
+		event.setOutcome(outcome);
 		event.setEquipmentLocalAt(request.getEquipmentLocalAt());
 		operationEventRepository.save(event);
 
+		gate.setOutcome(outcome);
+		if ("FAIL".equals(outcome)) {
+			// FAIL is evidence only — do not enter deriveNext done set.
+			logger.info(
+					"append end allowed={} outcome={} expectedNext={}",
+					gate.isAllowed(),
+					gate.getOutcome(),
+					gate.getExpectedNext());
+			return gate;
+		}
 		Set<String> completedAfter = new HashSet<>(evaluation.completedOps());
 		completedAfter.add(evaluation.thisOp());
-
-		gate.setOutcome("COMPLETE");
 		gate.setExpectedNext(deriveNext(evaluation.pathOps(), completedAfter));
 		logger.info(
-				"complete end allowed={} outcome={} expectedNext={}",
+				"append end allowed={} outcome={} expectedNext={}",
 				gate.isAllowed(),
 				gate.getOutcome(),
 				gate.getExpectedNext());
@@ -205,14 +270,14 @@ public class StationGateService {
 	}
 
 	/**
-	 * Shared gate evaluation for check and complete.
+	 * Shared gate evaluation for check, COMPLETE, and quality PASS/FAIL.
 	 *
 	 * @param serialNumber scanned serial number
 	 * @param equipmentId station equipment id
-	 * @param forComplete true for COMPLETE write path (applies through-complete fence)
+	 * @param kind CHECK (no class fence), COMPLETE (through whitelist), QUALITY (quality whitelist)
 	 * @return gate evaluation including response, path ops, completed ops, and thisOp
 	 */
-	private GateEvaluation evaluateGateCore(String serialNumber, String equipmentId, boolean forComplete) {
+	private GateEvaluation evaluateGateCore(String serialNumber, String equipmentId, EndpointKind kind) {
 		// Step 1: ORPHAN — no Panel Registration join (or join without WO) → deny.
 		Optional<PanelRegistrationEntity> panelRegEntity =
 				panelRegistrationRepository.findByPanelNumber(serialNumber);
@@ -239,21 +304,13 @@ public class StationGateService {
 				loadProcessPathContext(serialNumber, panelRegEntity.get().getWorkOrderId());
 		String expectedNext = deriveNext(processPathContext.pathOps(), processPathContext.completedOps());
 		String thisOp = resolveThisOp(equipmentId, expectedNext);
-		if (forComplete) {
-			StationGateResponse notThroughCompleteDeny =
-					denyIfNotThroughCompleteStation(thisOp, expectedNext);
-			if (notThroughCompleteDeny != null) {
-				attachMesContext(
-						notThroughCompleteDeny,
-						processPathContext.workOrderId(),
-						processPathContext.processPathId(),
-						thisOp);
-				return new GateEvaluation(
-						notThroughCompleteDeny,
-						processPathContext.pathOps(),
-						processPathContext.completedOps(),
-						thisOp);
-			}
+		if (kind == EndpointKind.COMPLETE && !isThroughCompleteOp(thisOp)) {
+			return endpointDeny(
+					wrongEndpointForComplete(thisOp, expectedNext), processPathContext, thisOp);
+		}
+		if (kind == EndpointKind.QUALITY && !isQualityOp(thisOp)) {
+			return endpointDeny(
+					wrongEndpointForQuality(thisOp, expectedNext), processPathContext, thisOp);
 		}
 		// Step3.4: check the thisOp is Already COMPLETE or expectedNext
 		// Already COMPLETE at this station → deny with current path next
@@ -278,16 +335,23 @@ public class StationGateService {
 	}
 
 	/**
-	 * Deny COMPLETE when thisOp is not on the through-complete whitelist.
+	 * Whether this op may append COMPLETE via station-completes (through whitelist).
+	 *
+	 * @param thisOp op implied by equipment id
+	 * @return true when thisOp is on the through-complete whitelist
+	 */
+	private boolean isThroughCompleteOp(String thisOp) {
+		return thisOp != null && throughCompleteOps.contains(thisOp);
+	}
+
+	/**
+	 * Plant WRONG_ENDPOINT deny when COMPLETE was posted on a non-through station.
 	 *
 	 * @param thisOp op implied by equipment id
 	 * @param expectedNext current path next op
-	 * @return WRONG_ENDPOINT deny response, or null when thisOp may append COMPLETE
+	 * @return WRONG_ENDPOINT deny with class-specific message
 	 */
-	private StationGateResponse denyIfNotThroughCompleteStation(String thisOp, String expectedNext) {
-		if (thisOp != null && throughCompleteOps.contains(thisOp)) {
-			return null;
-		}
+	private StationGateResponse wrongEndpointForComplete(String thisOp, String expectedNext) {
 		if (LOADER_OP.equals(thisOp)) {
 			return deny("WRONG_ENDPOINT", expectedNext, MSG_WRONG_ENDPOINT_LOADER);
 		}
@@ -299,6 +363,59 @@ public class StationGateService {
 			return deny("WRONG_ENDPOINT", expectedNext, MSG_WRONG_ENDPOINT_CHAMBER);
 		}
 		return deny("WRONG_ENDPOINT", expectedNext, MSG_WRONG_ENDPOINT_NOT_THROUGH);
+	}
+
+	/**
+	 * Whether this op may append PASS/FAIL on the quality writer (quality whitelist).
+	 *
+	 * @param thisOp op implied by equipment id
+	 * @return true when thisOp is a quality op (or flexible EOL sentinel)
+	 */
+	private boolean isQualityOp(String thisOp) {
+		return thisOp != null
+				&& (QUALITY_OPS.contains(thisOp) || FLEXIBLE_EOL_SENTINEL.equals(thisOp));
+	}
+
+	/**
+	 * Plant WRONG_ENDPOINT deny when PASS/FAIL was posted on a non-quality station.
+	 *
+	 * @param thisOp op implied by equipment id
+	 * @param expectedNext current path next op
+	 * @return WRONG_ENDPOINT deny with class-specific message
+	 */
+	private StationGateResponse wrongEndpointForQuality(String thisOp, String expectedNext) {
+		if (LOADER_OP.equals(thisOp)) {
+			return deny("WRONG_ENDPOINT", expectedNext, MSG_WRONG_ENDPOINT_LOADER_ON_QUALITY);
+		}
+		if (thisOp != null && throughCompleteOps.contains(thisOp)) {
+			return deny("WRONG_ENDPOINT", expectedNext, MSG_WRONG_ENDPOINT_THROUGH_ON_QUALITY);
+		}
+		if (thisOp != null && CHAMBER_OPS.contains(thisOp)) {
+			return deny("WRONG_ENDPOINT", expectedNext, MSG_WRONG_ENDPOINT_CHAMBER_ON_QUALITY);
+		}
+		return deny("WRONG_ENDPOINT", expectedNext, MSG_WRONG_ENDPOINT_NOT_QUALITY);
+	}
+
+	/**
+	 * Attach MES context and wrap a class-fence deny as a gate evaluation.
+	 *
+	 * @param wrongEndpoint WRONG_ENDPOINT response
+	 * @param processPathContext loaded path context
+	 * @param thisOp op implied by equipment id
+	 * @return gate evaluation that should return without appending
+	 */
+	private GateEvaluation endpointDeny(
+			StationGateResponse wrongEndpoint, ProcessPathContext processPathContext, String thisOp) {
+		attachMesContext(
+				wrongEndpoint,
+				processPathContext.workOrderId(),
+				processPathContext.processPathId(),
+				thisOp);
+		return new GateEvaluation(
+				wrongEndpoint,
+				processPathContext.pathOps(),
+				processPathContext.completedOps(),
+				thisOp);
 	}
 
 	/**

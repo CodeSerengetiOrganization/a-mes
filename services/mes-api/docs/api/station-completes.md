@@ -34,7 +34,7 @@ Do **not** invent `DENIED`, `WRONG_STATION`, `ORPHAN`, `WRONG_ENDPOINT`, or othe
 
 **This API on allow:** append `outcome=COMPLETE` only.  
 **This API on deny:** response only — **no** `operation_event` insert.  
-**Quality writer (AS-4):** append `PASS` / `FAIL` to the **same** table via a **different** endpoint — still never deny-as-outcome.
+**Quality writer (AS3-04):** append `PASS` / `FAIL` to the **same** table via [`station-quality-results.md`](station-quality-results.md) (`POST /api/station-quality-results`) — still never deny-as-outcome. AS-4 extends that writer.
 
 Vocab SoT: tech note **18**. Schema: V6 CHECK on `outcome`.
 

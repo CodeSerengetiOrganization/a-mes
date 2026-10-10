@@ -1,6 +1,7 @@
 package com.ames.mes_api.stationgate;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -20,6 +21,9 @@ import org.springframework.test.web.servlet.MockMvc;
  *
  * <p>COMPLETE HTTP status coverage: (1) allow → 200, (2) EOL WRONG_ENDPOINT → 200 not 409,
  * (3) missing equipmentLocalAt → 400.
+ *
+ * <p>Quality HTTP: (1) PASS allow → 200, (2) through WRONG_ENDPOINT → 200 not 409,
+ * (3) missing outcome → 400.
  */
 @WebMvcTest(controllers = StationGateController.class)
 public class StationGateControllerTest {
@@ -159,10 +163,92 @@ public class StationGateControllerTest {
 		verify(stationGateService, never()).complete(any());
 	}
 
+	@Test
+	void recordQuality_whenAllowed_returns200AndCallsRecordQuality() throws Exception {
+		when(stationGateService.recordQuality(any(StationGateRequest.class), eq("PASS")))
+				.thenReturn(allowedQuality("UV", "DEPANEL", "PASS"));
+
+		mockMvc.perform(post("/api/station-quality-results")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+								  "serialNumber": "PANEL-DEMO-001",
+								  "equipmentId": "AEL-01-UV",
+								  "equipmentLocalAt": "2026-08-26T08:15:00",
+								  "outcome": "PASS"
+								}
+								"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.allowed").value(true))
+				.andExpect(jsonPath("$.outcome").value("PASS"))
+				.andExpect(jsonPath("$.expectedNext").value("DEPANEL"))
+				.andExpect(jsonPath("$.thisOp").value("UV"))
+				.andExpect(jsonPath("$.serialNumber").doesNotExist())
+				.andExpect(jsonPath("$.equipmentId").doesNotExist());
+
+		verify(stationGateService).recordQuality(any(StationGateRequest.class), eq("PASS"));
+		verify(stationGateService, never()).complete(any());
+		verify(stationGateService, never()).evaluateGate(any());
+	}
+
+	@Test
+	void recordQuality_whenThroughWrongEndpoint_returns200NotConflict() throws Exception {
+		when(stationGateService.recordQuality(any(StationGateRequest.class), eq("PASS")))
+				.thenReturn(denied(
+						"WRONG_ENDPOINT",
+						"COAT",
+						"COAT",
+						"Through COMPLETE belongs on station-completes — not the quality API"));
+
+		mockMvc.perform(post("/api/station-quality-results")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+								  "serialNumber": "PANEL-DEMO-001",
+								  "equipmentId": "AEL-01-COAT",
+								  "equipmentLocalAt": "2026-08-26T08:15:00",
+								  "outcome": "PASS"
+								}
+								"""))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.allowed").value(false))
+				.andExpect(jsonPath("$.reasonCode").value("WRONG_ENDPOINT"))
+				.andExpect(jsonPath("$.outcome").doesNotExist());
+
+		verify(stationGateService).recordQuality(any(StationGateRequest.class), eq("PASS"));
+	}
+
+	@Test
+	void recordQuality_whenOutcomeMissing_returns400AndDoesNotCallService() throws Exception {
+		mockMvc.perform(post("/api/station-quality-results")
+						.contentType(MediaType.APPLICATION_JSON)
+						.content("""
+								{
+								  "serialNumber": "PANEL-DEMO-001",
+								  "equipmentId": "AEL-01-UV",
+								  "equipmentLocalAt": "2026-08-26T08:15:00"
+								}
+								"""))
+				.andExpect(status().isBadRequest());
+
+		verify(stationGateService, never()).recordQuality(any(), any());
+	}
+
 	private static StationGateResponse allowedComplete(String thisOp, String expectedNext) {
 		StationGateResponse response = new StationGateResponse();
 		response.setAllowed(true);
 		response.setOutcome("COMPLETE");
+		response.setExpectedNext(expectedNext);
+		response.setWorkOrderId("WO-DEMO-001");
+		response.setProcessPathId("pp_cold_ambient");
+		response.setThisOp(thisOp);
+		return response;
+	}
+
+	private static StationGateResponse allowedQuality(String thisOp, String expectedNext, String outcome) {
+		StationGateResponse response = new StationGateResponse();
+		response.setAllowed(true);
+		response.setOutcome(outcome);
 		response.setExpectedNext(expectedNext);
 		response.setWorkOrderId("WO-DEMO-001");
 		response.setProcessPathId("pp_cold_ambient");
