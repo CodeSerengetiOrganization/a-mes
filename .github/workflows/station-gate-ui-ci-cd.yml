@@ -1,5 +1,5 @@
 # station-gate-ui CI/CD — lint/test/build, push image to GHCR (no K3s deploy)
-# AS3-03 demo UI. Promote to cluster later under a separate deploy ticket — same idea as panel-registration-ui.
+# AS3-03 demo UI. Promote to K3s with deploy/k3s/station-gate-ui/deploy.sh — same idea as panel-registration-ui.
 name: station-gate-ui CI/CD
 
 on:
@@ -16,8 +16,9 @@ on:
 
 env:
   IMAGE_NAME: ghcr.io/codeserengetiorganization/a-mes/station-gate-ui
-  # Browser-reachable mes-api NodePort (baked into the image). Refresh if DHCP moves the node (Q6/Q7).
-  VITE_MES_API_BASE_URL: http://192.168.2.233:30100
+  # mes-api NodePort as seen from a browser on the K3s laptop itself (baked into the image).
+  # localhost, not the node IP: the laptop's IP changes with every Wi-Fi network (DHCP).
+  VITE_MES_API_BASE_URL: http://localhost:30100
 
 jobs:
   build-and-push:
