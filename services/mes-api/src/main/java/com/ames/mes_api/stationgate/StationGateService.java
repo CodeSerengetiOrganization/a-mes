@@ -57,11 +57,6 @@ public class StationGateService {
 	private static final Set<String> EOL_OPS = Set.of("COLD_EOL", "HOT_EOL", "AMBIENT_EOL");
 
 	/**
-	 * Quality ops — PASS / FAIL on quality API; never COMPLETE via station-completes.
-	 */
-	private static final Set<String> QUALITY_OPS = Set.of("UV", "COLD_EOL", "HOT_EOL", "AMBIENT_EOL");
-
-	/**
 	 * Non-path soak ops — WRONG_ENDPOINT on COMPLETE (not silent 400).
 	 */
 	private static final Set<String> CHAMBER_OPS = Set.of("COLD_CHAMBER", "HOT_CHAMBER");
@@ -101,6 +96,12 @@ public class StationGateService {
 	 */
 	private final Set<String> throughCompleteOps;
 
+	/**
+	 * Quality ops — PASS / FAIL on quality API; never COMPLETE via station-completes.
+	 * Loaded from ames.station-gate.quality-ops.
+	 */
+	private final Set<String> qualityOps;
+
 	private final PanelRegistrationRepository panelRegistrationRepository;
 	private final ProcessPathRepository processPathRepository;
 	private final WoPpBindingRepository woPpBindingRepository;
@@ -116,6 +117,7 @@ public class StationGateService {
 	 * @param operationEventRepository operation event repository
 	 * @param objectMapper JSON object mapper
 	 * @param throughCompleteOpsCsv comma-separated through-complete op whitelist
+	 * @param qualityOpsCsv comma-separated quality op whitelist
 	 */
 	public StationGateService(
 			PanelRegistrationRepository panelRegistrationRepository,
@@ -123,32 +125,40 @@ public class StationGateService {
 			WoPpBindingRepository woPpBindingRepository,
 			OperationEventRepository operationEventRepository,
 			ObjectMapper objectMapper,
-			@Value("${ames.station-gate.through-complete-ops}") String throughCompleteOpsCsv) {
+			@Value("${ames.station-gate.through-complete-ops}") String throughCompleteOpsCsv,
+			@Value("${ames.station-gate.quality-ops}") String qualityOpsCsv) {
 		this.panelRegistrationRepository = panelRegistrationRepository;
 		this.processPathRepository = processPathRepository;
 		this.woPpBindingRepository = woPpBindingRepository;
 		this.operationEventRepository = operationEventRepository;
 		this.objectMapper = objectMapper;
-		this.throughCompleteOps = parseThroughCompleteOps(throughCompleteOpsCsv);
+		this.throughCompleteOps = parseOps("ames.station-gate.through-complete-ops", throughCompleteOpsCsv);
+		this.qualityOps = parseOps("ames.station-gate.quality-ops", qualityOpsCsv);
+		Set<String> overlap = new HashSet<>(throughCompleteOps);
+		overlap.retainAll(qualityOps);
+		if (!overlap.isEmpty()) {
+			throw new IllegalStateException(
+					"ops cannot be both through-complete and quality (fail-closed): " + overlap);
+		}
 	}
 
 	/**
-	 * Parse the through-complete op CSV whitelist; blank or empty fails closed.
+	 * Parse an op CSV whitelist; blank or empty fails closed.
 	 *
-	 * @param csv comma-separated through-complete ops
-	 * @return unmodifiable set of through-complete ops
+	 * @param property property name, for the startup error message
+	 * @param csv comma-separated ops
+	 * @return unmodifiable set of ops
 	 */
-	private static Set<String> parseThroughCompleteOps(String csv) {
+	private static Set<String> parseOps(String property, String csv) {
 		if (csv == null || csv.isBlank()) {
-			throw new IllegalStateException(
-					"ames.station-gate.through-complete-ops must not be blank (fail-closed)");
+			throw new IllegalStateException(property + " must not be blank (fail-closed)");
 		}
 		Set<String> ops = Arrays.stream(csv.split("\\s*,\\s*"))
+				.map(String::trim)
 				.filter(s -> !s.isBlank())
 				.collect(Collectors.toUnmodifiableSet());
 		if (ops.isEmpty()) {
-			throw new IllegalStateException(
-					"ames.station-gate.through-complete-ops parsed empty (fail-closed)");
+			throw new IllegalStateException(property + " parsed empty (fail-closed)");
 		}
 		return ops;
 	}
@@ -356,7 +366,7 @@ public class StationGateService {
 			return deny("WRONG_ENDPOINT", expectedNext, MSG_WRONG_ENDPOINT_LOADER);
 		}
 		if (thisOp != null
-				&& (QUALITY_OPS.contains(thisOp) || FLEXIBLE_EOL_SENTINEL.equals(thisOp))) {
+				&& (qualityOps.contains(thisOp) || FLEXIBLE_EOL_SENTINEL.equals(thisOp))) {
 			return deny("WRONG_ENDPOINT", expectedNext, MSG_WRONG_ENDPOINT_QUALITY);
 		}
 		if (thisOp != null && CHAMBER_OPS.contains(thisOp)) {
@@ -373,7 +383,7 @@ public class StationGateService {
 	 */
 	private boolean isQualityOp(String thisOp) {
 		return thisOp != null
-				&& (QUALITY_OPS.contains(thisOp) || FLEXIBLE_EOL_SENTINEL.equals(thisOp));
+				&& (qualityOps.contains(thisOp) || FLEXIBLE_EOL_SENTINEL.equals(thisOp));
 	}
 
 	/**

@@ -4,10 +4,10 @@ import type {
   StationCompleteRequest,
   StationGateClient,
   StationGateResponse,
-} from './types'
+} from '../api/types'
 
-// Stand-in for mes-api until the real client is wired (AS3-03 step 2). It follows the gate order
-// in StationGateService so the screen can be walked end to end; it is not a source of truth.
+// Screen-test double only. It mirrors the gate order in StationGateService so screen tests can walk
+// a serial end to end; mes-api tests own the gate rules, and this file is not a source of truth.
 
 const PROCESS_PATH_OPS: Record<string, string[]> = {
   pp_full_eol: ['LOADER', 'COAT', 'UV', 'DEPANEL', 'CURE', 'ASM', 'COLD_EOL', 'HOT_EOL', 'AMBIENT_EOL', 'PACK'],

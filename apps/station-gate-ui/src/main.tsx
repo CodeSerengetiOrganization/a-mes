@@ -2,10 +2,10 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
-import { createFakeStationGateClient } from './api/fakeClient'
+import { createHttpStationGateClient } from './api/httpClient'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App client={createFakeStationGateClient()} />
+    <App client={createHttpStationGateClient()} />
   </StrictMode>,
 )

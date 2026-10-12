@@ -64,7 +64,34 @@ public class StationGateServiceTest {
 				woPpBindingRepository,
 				operationEventRepository,
 				new JsonMapper(),
-				"COAT,DEPANEL,CURE,ASM,PACK");
+				"COAT,DEPANEL,CURE,ASM,PACK",
+				"UV,COLD_EOL,HOT_EOL,AMBIENT_EOL");
+	}
+
+	@Test
+	void constructor_whenQualityOpsBlank_failsClosed() {
+		IllegalStateException ex = assertThrows(IllegalStateException.class, () -> new StationGateService(
+				panelRegistrationRepository,
+				processPathRepository,
+				woPpBindingRepository,
+				operationEventRepository,
+				new JsonMapper(),
+				"COAT,DEPANEL,CURE,ASM,PACK",
+				"  "));
+		assertTrue(ex.getMessage().contains("ames.station-gate.quality-ops"));
+	}
+
+	@Test
+	void constructor_whenOpIsBothThroughAndQuality_failsClosed() {
+		IllegalStateException ex = assertThrows(IllegalStateException.class, () -> new StationGateService(
+				panelRegistrationRepository,
+				processPathRepository,
+				woPpBindingRepository,
+				operationEventRepository,
+				new JsonMapper(),
+				"COAT,DEPANEL,CURE,ASM,PACK",
+				"UV,PACK"));
+		assertTrue(ex.getMessage().contains("PACK"));
 	}
 
 	@Test

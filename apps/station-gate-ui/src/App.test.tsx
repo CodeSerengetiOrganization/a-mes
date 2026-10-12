@@ -2,7 +2,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent, { type UserEvent } from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import App from './App'
-import { createFakeStationGateClient, type FakeClientOptions } from './api/fakeClient'
+import { createFakeStationGateClient, type FakeClientOptions } from './test/fakeStationGateClient'
 
 // PANEL-DEMO-002 is joined to WO-DEMO-002 on pp_cold_ambient:
 // LOADER → COAT → UV → DEPANEL → CURE → ASM → COLD_EOL → AMBIENT_EOL → PACK
