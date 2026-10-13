@@ -10,7 +10,8 @@ Reserved **30100–30109** for A-MES so API + UI stay continuous and clear of MM
 |------|---------|--------|
 | **30100** | mes-api | In use — [`mes-api/`](mes-api/) |
 | **30101** | panel-registration-ui (PCB Loader) | In use — [`panel-registration-ui/`](panel-registration-ui/) |
-| **30102–30109** | future A-MES apps | Reserved |
+| **30102** | station-gate-ui (AS3-03 demo) | In use — [`station-gate-ui/`](station-gate-ui/) |
+| **30103–30109** | future A-MES apps | Reserved |
 
 Do not reuse `30083` for A-MES even if it frees up.
 
@@ -22,3 +23,4 @@ Do not reuse `30083` for A-MES even if it frees up.
 | [`mysql/`](mysql/) | MySQL (already on cluster) |
 | [`mes-api/`](mes-api/) | MES API promote + smoke |
 | [`panel-registration-ui/`](panel-registration-ui/) | Panel Registration UI (PCB Loader) promote + smoke |
+| [`station-gate-ui/`](station-gate-ui/) | Station Gate demo UI (AS3-03) promote + smoke |
