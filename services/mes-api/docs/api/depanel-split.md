@@ -206,21 +206,23 @@ No `409` on this endpoint. A second split is `200` + `ALREADY_COMPLETE`.
 
 ## Persist
 
-Column names are chosen in the pull request. This contract names the facts only.
+Column names are in `V7__create_depanel_split.sql`.
 
 ### Split table
 
 One row per PCBA. This table is the only record of which PCBA serials came from which panel.
 
-| Fact | Value |
-|------|-------|
-| Parent panel | Trimmed `panelNumber` |
-| Slot | The request `slot` |
-| PCBA serial | The request cavity result, only when it is a PCBA serial |
-| Station time | `equipmentLocalAt` — the depaneler clock |
-| Server time | Database default at insert — when MES commits the split |
+| Fact | Column | Value |
+|------|--------|-------|
+| Parent panel | `panel_number` | Trimmed `panelNumber`. FK to `panel_registration` |
+| Slot | `slot` | The request `slot`. This part's service rule still requires `A1`, `A2`, `B1`, and `B2`. The table does not limit the names |
+| PCBA serial | `pcba_serial` | The request cavity result, only when it is a PCBA serial |
+| Station time | `equipment_local_at` | `equipmentLocalAt` — the depaneler clock |
+| Server time | `recorded_at` | Database default at insert — when MES commits the split |
 
-The four rows of one split share one server time. Java does not set it. The response does not return it. The pull request chooses the column name.
+The service inserts the four rows in one `INSERT`. They share one `recorded_at`. Java does not set `recorded_at`. The response does not return it.
+
+`UNIQUE (panel_number, slot)` and `UNIQUE (panel_number, pcba_serial)` are the race backstop. A PCBA serial on another panel is still allowed. The PCBA serial format stays a service check.
 
 The split table does not store the work order, the process path, `PASS`, or `FAIL`.
 
@@ -255,7 +257,7 @@ That row is not a fifth split row.
 | Refuse-as-history | Epic C |
 | Hold table, scrap, rework | Out of this ticket. Hold here means store nothing. |
 | A second allow-list of stations | The station gate already requires `AEL-01-DEPANEL` when Depanel is the next step |
-| Column names and the PCBA serial format regex | Pull request |
+| PCBA serial format regex | Pull request. The table does not encode it |
 | Demo seed or demo script | Pull request chooses one, so the K3s walk can pass Depanel |
 | OpenAPI / Swagger | Optional later |
 | `POST /api/station-completes` at `DEPANEL` | Stays as it is in this ticket. AS5-02 moves `DEPANEL` to quality-ops. A COMPLETE posted there then returns `WRONG_ENDPOINT`. The in-process split write still stores the Depanel split COMPLETE. |

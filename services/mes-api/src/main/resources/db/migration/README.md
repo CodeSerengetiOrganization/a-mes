@@ -10,6 +10,7 @@ Versioned SQL (Spring Boot default: `classpath:db/migration`):
 | `V4__panel_unique_and_wo_fk.sql` | UNIQUE(`panel_number`); FK `work_order_id` → `wo_pp_binding` |
 | `V5__rename_wo_management_to_panel_registration.sql` | Rename `wo_management` → `panel_registration` (+ constraint names) |
 | `V6__create_operation_event.sql` | DDL — `operation_event` (append-only COMPLETE / PASS / FAIL; no unique on serial+op) |
+| `V7__create_depanel_split.sql` | DDL — `depanel_split` (one row per PCBA; station time + server time; no WO / path / PASS / FAIL) |
 
 Do not edit applied `V*` files on a shared DB; add a new version instead.
 
