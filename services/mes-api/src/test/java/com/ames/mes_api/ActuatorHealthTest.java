@@ -3,6 +3,7 @@ package com.ames.mes_api;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.ames.mes_api.depanel.DepanelSplitRepository;
 import com.ames.mes_api.panelregistration.PanelRegistrationRepository;
 import com.ames.mes_api.panelregistration.WoPpBindingRepository;
 import com.ames.mes_api.processpath.ProcessPathRepository;
@@ -40,6 +41,9 @@ class ActuatorHealthTest {
 
 	@MockitoBean
 	private OperationEventRepository operationEventRepository;
+
+	@MockitoBean
+	private DepanelSplitRepository depanelSplitRepository;
 
 	@Test
 	void liveness_returns200() throws Exception {

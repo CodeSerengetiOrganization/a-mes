@@ -3,6 +3,7 @@ package com.ames.mes_api.depanel;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
@@ -17,8 +18,11 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.ArgumentMatchers;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 @ExtendWith(MockitoExtension.class)
 class DepanelSplitServiceTest {
@@ -53,10 +57,16 @@ class DepanelSplitServiceTest {
 
 		ArgumentCaptor<List<DepanelSplitInsertRow>> rows = listCaptor();
 		verify(depanelSplitRepository).insertSplit(
-				org.mockito.ArgumentMatchers.eq("PANEL-APCU-20260729-0042"),
+				ArgumentMatchers.eq("PANEL-APCU-20260729-0042"),
 				rows.capture(),
-				org.mockito.ArgumentMatchers.eq(AT));
+				ArgumentMatchers.eq(AT));
 		assertEquals(List.of("A1", "A2", "B1", "B2"), rows.getValue().stream().map(DepanelSplitInsertRow::slot).toList());
+		assertEquals(List.of(
+				"PCBA-APCU-0000842101",
+				"PCBA-APCU-0000842102",
+				"PCBA-APCU-0000842103",
+				"PCBA-APCU-0000842104"),
+				rows.getValue().stream().map(DepanelSplitInsertRow::pcbaSerial).toList());
 	}
 
 	@Test
@@ -65,6 +75,24 @@ class DepanelSplitServiceTest {
 
 		DepanelSplitRequest request = goodRequest();
 		request.getCavities().get(1).setCavityResult("XOUT");
+		DepanelSplitResponse response = service.split(request);
+
+		assertFalse(response.isStored());
+		assertEquals("HOLD", response.getReasonCode());
+		assertEquals(DepanelSplitService.HOLD_MESSAGE, response.getMessage());
+		verify(stationGateService, never()).complete(any());
+		verify(depanelSplitRepository, never()).insertSplit(any(), any(), any());
+	}
+
+	@Test
+	void holdStoresNothingWhenOneSlotIsMissing() {
+		when(stationGateService.evaluateGate(any())).thenReturn(allowDepanel());
+
+		DepanelSplitRequest request = goodRequest();
+		request.setCavities(List.of(
+				cavity("A1", "PCBA-APCU-0000842101"),
+				cavity("A2", "PCBA-APCU-0000842102"),
+				cavity("B1", "PCBA-APCU-0000842103")));
 		DepanelSplitResponse response = service.split(request);
 
 		assertFalse(response.isStored());
@@ -104,6 +132,48 @@ class DepanelSplitServiceTest {
 		assertFalse(response.isStored());
 		assertEquals("ALREADY_COMPLETE", response.getReasonCode());
 		assertEquals("This panel is already split. MES stored nothing.", response.getMessage());
+		verify(depanelSplitRepository, never()).insertSplit(any(), any(), any());
+	}
+
+	@Test
+	void blankPanelNumberRejectsBeforeGate() {
+		DepanelSplitRequest request = goodRequest();
+		request.setPanelNumber("  ");
+
+		ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> service.split(request));
+
+		assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+		assertEquals("panelNumber is required", ex.getReason());
+		assertRejectedBeforeGate();
+	}
+
+	@Test
+	void missingEquipmentLocalAtRejectsBeforeGate() {
+		DepanelSplitRequest request = goodRequest();
+		request.setEquipmentLocalAt(null);
+
+		ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> service.split(request));
+
+		assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+		assertEquals("equipmentLocalAt is required", ex.getReason());
+		assertRejectedBeforeGate();
+	}
+
+	@Test
+	void emptyCavitiesRejectsBeforeGate() {
+		DepanelSplitRequest request = goodRequest();
+		request.setCavities(List.of());
+
+		ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> service.split(request));
+
+		assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+		assertEquals("cavities are required", ex.getReason());
+		assertRejectedBeforeGate();
+	}
+
+	private void assertRejectedBeforeGate() {
+		verify(stationGateService, never()).evaluateGate(any());
+		verify(stationGateService, never()).complete(any());
 		verify(depanelSplitRepository, never()).insertSplit(any(), any(), any());
 	}
 

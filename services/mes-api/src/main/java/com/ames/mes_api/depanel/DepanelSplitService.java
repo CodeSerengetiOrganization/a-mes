@@ -66,7 +66,7 @@ public class DepanelSplitService {
 		}
 
 		List<DepanelSplitInsertRow> rows = trimCavities(cavities);
-		StationGateRequest gateRequest = gateRequest(panelNumber, equipmentId, equipmentLocalAt);
+		StationGateRequest gateRequest = buildGateRequest(panelNumber, equipmentId, equipmentLocalAt);
 
 		StationGateResponse gate = stationGateService.evaluateGate(gateRequest);
 		if (!gate.isAllowed()) {
@@ -75,7 +75,7 @@ public class DepanelSplitService {
 		if (!DEPANEL_OP.equals(gate.getThisOp())) {
 			return refuse(panelNumber, "WRONG_ENDPOINT");
 		}
-		if (badCavity(rows)) {
+		if (hasBadCavity(rows)) {
 			return hold(panelNumber);
 		}
 
@@ -102,7 +102,7 @@ public class DepanelSplitService {
 		}).toList();
 	}
 
-	private static boolean badCavity(List<DepanelSplitInsertRow> rows) {
+	private static boolean hasBadCavity(List<DepanelSplitInsertRow> rows) {
 		Set<String> slots = new HashSet<>();
 		Set<String> serials = new HashSet<>();
 		for (DepanelSplitInsertRow row : rows) {
@@ -127,7 +127,7 @@ public class DepanelSplitService {
 				&& serial.length() <= PCBA_MAX_LENGTH;
 	}
 
-	private static StationGateRequest gateRequest(
+	private static StationGateRequest buildGateRequest(
 			String panelNumber, String equipmentId, LocalDateTime equipmentLocalAt) {
 		StationGateRequest gateRequest = new StationGateRequest();
 		gateRequest.setSerialNumber(panelNumber);
