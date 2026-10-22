@@ -6,6 +6,7 @@
 **Depends on:** AS-2 (panel is on a work order) · existing station gate  
 **Sibling (later):** AS5-02 — station gate reads the PCBA. This contract does not.  
 **Gate contracts:** [`station-skip-ahead-gate.md`](station-skip-ahead-gate.md) · [`station-completes.md`](station-completes.md)  
+**Concurrency:** `a-mes-docs` → `requirements/tech-notes/28-tech-note-depanel-split-transaction-joins-panel-lock.md`  
 **Package:** `com.ames.mes_api.depanel`  
 **Status:** **Kai draft** (2026-10-19) — not frozen. Jonathan reviews. No OpenAPI yet.
 
@@ -94,8 +95,8 @@ The format check applies only to a PCBA serial. The pull request sets the exact 
    - No PCBA serial appears twice on this panel. This check is this panel only.
    - Each PCBA serial passes the format check.
    - Any cavity result is `XOUT`, `EMPTY`, or `UNREADABLE`.
-5. **One transaction, only when item 8 passes.**
-   - Lock the `panel_registration` row (`SELECT … FOR UPDATE`), the same lock `StationGateService.complete` already takes.
+5. **One transaction, only when item 8 passes.** The early gate check ends in its own read before this transaction starts.
+   - Lock the `panel_registration` row (`SELECT … FOR UPDATE`), the same lock `StationGateService.complete` already takes. This lock is the first database read in the write transaction.
    - Inside that lock, `StationGateService` stores one `COMPLETE` at `DEPANEL` for the panel number.
    - The same transaction inserts the four split rows.
    - If one write fails, MES stores neither the rows nor the COMPLETE.
@@ -222,7 +223,7 @@ One row per PCBA. This table is the only record of which PCBA serials came from 
 
 The service inserts the four rows in one `INSERT`. They share one `recorded_at`. Java does not set `recorded_at`. The response does not return it.
 
-`UNIQUE (panel_number, slot)` and `UNIQUE (panel_number, pcba_serial)` are the race backstop. A PCBA serial on another panel is still allowed. The PCBA serial format stays a service check.
+`UNIQUE (panel_number, slot)` and `UNIQUE (panel_number, pcba_serial)` are the race backstop. A concurrent second split gets `ALREADY_COMPLETE` from the locked station gate. The service does not map a unique-key error to that code. A PCBA serial on another panel is still allowed. The PCBA serial format stays a service check.
 
 The split table does not store the work order, the process path, `PASS`, or `FAIL`.
 

@@ -10,12 +10,14 @@ import java.util.Map;
 import java.util.Set;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 /**
  * Depanel split write. The station gate stores the Depanel split COMPLETE.
  * This package does not call {@code OperationEventRepository} and does not write {@code panel_registration}.
+ *
+ * <p>The early gate check is its own read. {@link DepanelSplitWriter#store} opens the write
+ * transaction after that read, so the panel row lock is the first read in the write.
  */
 @Service
 public class DepanelSplitService {
@@ -38,12 +40,11 @@ public class DepanelSplitService {
 			"WRONG_ENDPOINT", "This station cannot split a panel. MES stored nothing.");
 
 	private final StationGateService stationGateService;
-	private final DepanelSplitRepository depanelSplitRepository;
+	private final DepanelSplitWriter depanelSplitWriter;
 
-	public DepanelSplitService(
-			StationGateService stationGateService, DepanelSplitRepository depanelSplitRepository) {
+	public DepanelSplitService(StationGateService stationGateService, DepanelSplitWriter depanelSplitWriter) {
 		this.stationGateService = stationGateService;
-		this.depanelSplitRepository = depanelSplitRepository;
+		this.depanelSplitWriter = depanelSplitWriter;
 	}
 
 	/**
@@ -52,7 +53,6 @@ public class DepanelSplitService {
 	 * @param request depanel split request
 	 * @return response body. The controller maps {@code stored} to 201 or 200
 	 */
-	@Transactional
 	public DepanelSplitResponse split(DepanelSplitRequest request) {
 		String panelNumber = requiredTrim(request.getPanelNumber(), "panelNumber");
 		String equipmentId = requiredTrim(request.getEquipmentId(), "equipmentId");
@@ -79,16 +79,10 @@ public class DepanelSplitService {
 			return hold(panelNumber);
 		}
 
-		StationGateResponse completed = stationGateService.complete(gateRequest);
-		if (!completed.isAllowed()) {
-			return refuse(panelNumber, completed.getReasonCode());
-		}
-
 		List<DepanelSplitInsertRow> ordered = REQUIRED_SLOTS.stream()
 				.map(slot -> rows.stream().filter(row -> slot.equals(row.slot())).findFirst().orElseThrow())
 				.toList();
-		depanelSplitRepository.insertSplit(panelNumber, ordered, equipmentLocalAt);
-		return stored(panelNumber);
+		return depanelSplitWriter.store(panelNumber, gateRequest, ordered, equipmentLocalAt);
 	}
 
 	private static List<DepanelSplitInsertRow> trimCavities(List<DepanelCavityRequest> cavities) {
@@ -136,7 +130,7 @@ public class DepanelSplitService {
 		return gateRequest;
 	}
 
-	private static DepanelSplitResponse stored(String panelNumber) {
+	static DepanelSplitResponse stored(String panelNumber) {
 		DepanelSplitResponse response = new DepanelSplitResponse();
 		response.setStored(true);
 		response.setPanelNumber(panelNumber);
@@ -153,7 +147,7 @@ public class DepanelSplitService {
 		return response;
 	}
 
-	private static DepanelSplitResponse refuse(String panelNumber, String reasonCode) {
+	static DepanelSplitResponse refuse(String panelNumber, String reasonCode) {
 		DepanelSplitResponse response = new DepanelSplitResponse();
 		response.setStored(false);
 		response.setPanelNumber(panelNumber);

@@ -39,7 +39,8 @@ class DepanelSplitServiceTest {
 
 	@BeforeEach
 	void setUp() {
-		service = new DepanelSplitService(stationGateService, depanelSplitRepository);
+		service = new DepanelSplitService(
+				stationGateService, new DepanelSplitWriter(stationGateService, depanelSplitRepository));
 	}
 
 	@Test
