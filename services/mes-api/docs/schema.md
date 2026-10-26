@@ -2,7 +2,7 @@
 
 **Type:** Human-readable picture for onboarding — **not** applied by Flyway  
 **SoT for DDL:** `src/main/resources/db/migration/V*.sql` (run by Spring Boot)  
-**As of:** V6 (2026-08-18)  
+**As of:** V7 (2026-10-20)  
 **Audience:** new engineers · Maya / Sam · reviewers
 
 If this note disagrees with a migration, **trust the migration** and update this file.
@@ -26,6 +26,7 @@ Flyway `V1`…`Vn` is the path the database took. New readers should not have to
 | Panel’s WO must already have a path binding | FK → `wo_pp_binding` (V4) |
 | Units inherit path via WO — not a column on the panel row | Join WO → `process_path_id` |
 | Through COMPLETE / quality PASS/FAIL evidence | `operation_event` (append-only; not on `panel_registration`) |
+| Panel → slot → PCBA serial at PCB Depaneler | `depanel_split` (one row per PCBA; no WO / path / PASS / FAIL) |
 | EOL retry allowed | No UNIQUE on (`serial_number`, `op_code`) — line management regulates retries |
 
 ---
@@ -41,6 +42,17 @@ process_path                 wo_pp_binding                 panel_registration
 │ created_at       │        └─────────────────────┘      │ id (surrogate PK)        │
 └──────────────────┘                                     └──────────────────────────┘
      AS-1 master              AS2-01 WO ↔ path                 AS2-02 Panel Registration
+
+depanel_split  (one row per PCBA — parent is the panel; no WO copy)
+┌──────────────────────────┐
+│ id (surrogate PK)        │
+│ panel_number (FK)        │
+│ slot                     │
+│ pcba_serial              │
+│ equipment_local_at       │
+│ recorded_at (DB default) │
+└──────────────────────────┘
+     AS5-01 split
 
 operation_event  (serial → join via panel_registration / later unit join — no WO copy)
 ┌──────────────────────────┐
@@ -90,6 +102,19 @@ No ERP quantity/status here (DoD-7).
 | `registered_at` | Panel Registration time (`DEFAULT CURRENT_TIMESTAMP` — DB owns stamp) |
 
 Renamed from `wo_management` in V5 so table ↔ entity ↔ API share plant language (see `.cursor/rules/plant-language-naming.mdc`).
+
+### `depanel_split` — panel bound to its PCBA serials (AS5-01)
+
+| Column | Meaning |
+|--------|---------|
+| `id` | Surrogate PK |
+| `panel_number` | Parent panel. FK → `panel_registration.panel_number` |
+| `slot` | Cavity name from the request. Unique with the panel. The table does not limit the name list |
+| `pcba_serial` | SMT serial. Unique with the panel. Not unique across panels |
+| `equipment_local_at` | Depaneler clock. The app sets this |
+| `recorded_at` | MES commit time (`DEFAULT CURRENT_TIMESTAMP(3)` — DB owns the stamp) |
+
+No work order and no process path. Those stay on `panel_registration`. No `PASS` / `FAIL`. One `INSERT` of four rows shares one `recorded_at`. Index on `pcba_serial` is for a later lookup. This ticket has no read endpoint.
 
 ### `operation_event` — append-only operation evidence (AS3-tech)
 

@@ -1,5 +1,6 @@
 package com.ames.mes_api;
 
+import com.ames.mes_api.depanel.DepanelSplitRepository;
 import com.ames.mes_api.panelregistration.PanelRegistrationRepository;
 import com.ames.mes_api.panelregistration.WoPpBindingRepository;
 import com.ames.mes_api.processpath.ProcessPathRepository;
@@ -31,6 +32,9 @@ class MesApiApplicationTests {
 
 	@MockitoBean
 	private ProcessPathRepository processPathRepository;
+
+	@MockitoBean
+	private DepanelSplitRepository depanelSplitRepository;
 
 	@Test
 	void contextLoads() {
