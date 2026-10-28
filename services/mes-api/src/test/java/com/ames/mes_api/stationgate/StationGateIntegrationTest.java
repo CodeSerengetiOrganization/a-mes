@@ -45,6 +45,7 @@ public class StationGateIntegrationTest {
 
 	private static final String CHECK_PATH = "/api/station-gate-checks";
 	private static final String COMPLETE_PATH = "/api/station-completes";
+	private static final String QUALITY_PATH = "/api/station-quality-results";
 
 	/** Seeded WO → {@code pp_cold_ambient} (V3). */
 	private static final String WO_COLD_AMBIENT = "WO-DEMO-002";
@@ -74,6 +75,7 @@ public class StationGateIntegrationTest {
 			"Quality PASS/FAIL belongs on the quality API — not station-completes";
 	private static final String MSG_WRONG_ENDPOINT_CHAMBER =
 			"Chamber soak is not a station-completes step — no COMPLETE here";
+	private static final String MSG_PANEL_AFTER_DEPANEL = "Scan the PCBA serial.";
 
 	private static final LocalDateTime LOCAL_AT = LocalDateTime.of(2026, 8, 28, 17, 0);
 
@@ -97,7 +99,7 @@ public class StationGateIntegrationTest {
 	}
 
 	@Test
-	void complete_happyPath_coldAmbient_coatThroughPack_advancesExpectedNext() throws Exception {
+	void complete_happyPath_coldAmbient_coatThroughDepanel_qualityPassAdvancesToCure() throws Exception {
 		// LOADER done via Panel Registration join — may work Coating now
 		assertGateShowsNext(SERIAL_COLD_AMBIENT, "AEL-01-COAT", "COAT");
 
@@ -105,82 +107,47 @@ public class StationGateIntegrationTest {
 		seedPass(SERIAL_COLD_AMBIENT, "UV", "AEL-01-UV");
 		assertGateShowsNext(SERIAL_COLD_AMBIENT, "AEL-01-DEPANEL", "DEPANEL");
 
-		assertCompleteAdvances(SERIAL_COLD_AMBIENT, "AEL-01-DEPANEL", "CURE");
-		assertCompleteAdvances(SERIAL_COLD_AMBIENT, "AEL-01-CURE", "ASM");
-		assertCompleteAdvances(SERIAL_COLD_AMBIENT, "AEL-01-ASM", "COLD_EOL");
+		// AS5-02: HTTP COMPLETE at Depanel is the quality class. The panel number stops here.
+		StationGateResponse depanelComplete = complete(SERIAL_COLD_AMBIENT, "AEL-01-DEPANEL");
+		assertDenied(depanelComplete, "WRONG_ENDPOINT", "DEPANEL", MSG_WRONG_ENDPOINT_QUALITY);
+		assertNull(depanelComplete.getOutcome());
 
-		seedPass(SERIAL_COLD_AMBIENT, "COLD_EOL", "AEL-01-COLD-EOL");
-		assertGateShowsNext(SERIAL_COLD_AMBIENT, "AEL-01-AMBIENT-EOL", "AMBIENT_EOL");
-		seedPass(SERIAL_COLD_AMBIENT, "AMBIENT_EOL", "AEL-01-AMBIENT-EOL");
-		assertGateShowsNext(SERIAL_COLD_AMBIENT, "AEL-01-PACK", "PACK");
-
-		StationGateResponse pack = complete(SERIAL_COLD_AMBIENT, "AEL-01-PACK");
-		assertTrue(pack.isAllowed());
-		assertEquals("COMPLETE", pack.getOutcome());
-		assertNull(pack.getExpectedNext());
+		StationGateResponse depanelPass = quality(SERIAL_COLD_AMBIENT, "AEL-01-DEPANEL", "PASS");
+		assertTrue(depanelPass.isAllowed());
+		assertEquals("PASS", depanelPass.getOutcome());
+		assertEquals("CURE", depanelPass.getExpectedNext());
 
 		List<OperationEventEntity> events =
 				operationEventRepository.findBySerialNumberOrderByIdAsc(SERIAL_COLD_AMBIENT);
-		assertEquals(8, events.size());
+		assertEquals(List.of("COAT", "UV", "DEPANEL"), events.stream().map(OperationEventEntity::getOpCode).toList());
 		assertEquals(
-				List.of("COAT", "UV", "DEPANEL", "CURE", "ASM", "COLD_EOL", "AMBIENT_EOL", "PACK"),
-				events.stream().map(OperationEventEntity::getOpCode).toList());
-		assertEquals(
-				List.of("COMPLETE", "PASS", "COMPLETE", "COMPLETE", "COMPLETE", "PASS", "PASS", "COMPLETE"),
+				List.of("COMPLETE", "PASS", "PASS"),
 				events.stream().map(OperationEventEntity::getOutcome).toList());
 	}
 
 	@Test
-	void complete_happyPath_fullEol_coatThroughPack_advancesExpectedNext() throws Exception {
-		// pp_full_eol (WO-DEMO-001): Cold → Hot → Ambient → Pack
+	void complete_happyPath_fullEol_coatThroughDepanel_qualityPassAdvancesToCure() throws Exception {
+		// pp_full_eol (WO-DEMO-001): Coat and UV stay on the panel number. Depanel is quality.
 		assertGateShowsNext(SERIAL_FULL_EOL, "AEL-01-COAT", "COAT");
 
 		assertCompleteAdvances(SERIAL_FULL_EOL, "AEL-01-COAT", "UV");
 		seedPass(SERIAL_FULL_EOL, "UV", "AEL-01-UV");
 		assertGateShowsNext(SERIAL_FULL_EOL, "AEL-01-DEPANEL", "DEPANEL");
 
-		assertCompleteAdvances(SERIAL_FULL_EOL, "AEL-01-DEPANEL", "CURE");
-		assertCompleteAdvances(SERIAL_FULL_EOL, "AEL-01-CURE", "ASM");
-		assertCompleteAdvances(SERIAL_FULL_EOL, "AEL-01-ASM", "COLD_EOL");
+		StationGateResponse depanelComplete = complete(SERIAL_FULL_EOL, "AEL-01-DEPANEL");
+		assertDenied(depanelComplete, "WRONG_ENDPOINT", "DEPANEL", MSG_WRONG_ENDPOINT_QUALITY);
+		assertNull(depanelComplete.getOutcome());
 
-		seedPass(SERIAL_FULL_EOL, "COLD_EOL", "AEL-01-COLD-EOL");
-		assertGateShowsNext(SERIAL_FULL_EOL, "AEL-01-HOT-EOL", "HOT_EOL");
-		seedPass(SERIAL_FULL_EOL, "HOT_EOL", "AEL-01-HOT-EOL");
-		assertGateShowsNext(SERIAL_FULL_EOL, "AEL-01-AMBIENT-EOL", "AMBIENT_EOL");
-		seedPass(SERIAL_FULL_EOL, "AMBIENT_EOL", "AEL-01-AMBIENT-EOL");
-		assertGateShowsNext(SERIAL_FULL_EOL, "AEL-01-PACK", "PACK");
-
-		StationGateResponse pack = complete(SERIAL_FULL_EOL, "AEL-01-PACK");
-		assertTrue(pack.isAllowed());
-		assertEquals("COMPLETE", pack.getOutcome());
-		assertNull(pack.getExpectedNext());
+		StationGateResponse depanelPass = quality(SERIAL_FULL_EOL, "AEL-01-DEPANEL", "PASS");
+		assertTrue(depanelPass.isAllowed());
+		assertEquals("PASS", depanelPass.getOutcome());
+		assertEquals("CURE", depanelPass.getExpectedNext());
 
 		List<OperationEventEntity> events =
 				operationEventRepository.findBySerialNumberOrderByIdAsc(SERIAL_FULL_EOL);
-		assertEquals(9, events.size());
+		assertEquals(List.of("COAT", "UV", "DEPANEL"), events.stream().map(OperationEventEntity::getOpCode).toList());
 		assertEquals(
-				List.of(
-						"COAT",
-						"UV",
-						"DEPANEL",
-						"CURE",
-						"ASM",
-						"COLD_EOL",
-						"HOT_EOL",
-						"AMBIENT_EOL",
-						"PACK"),
-				events.stream().map(OperationEventEntity::getOpCode).toList());
-		assertEquals(
-				List.of(
-						"COMPLETE",
-						"PASS",
-						"COMPLETE",
-						"COMPLETE",
-						"COMPLETE",
-						"PASS",
-						"PASS",
-						"PASS",
-						"COMPLETE"),
+				List.of("COMPLETE", "PASS", "PASS"),
 				events.stream().map(OperationEventEntity::getOutcome).toList());
 	}
 
@@ -200,17 +167,17 @@ public class StationGateIntegrationTest {
 	}
 
 	@Test
-	void deny_wrongStation_aheadAtAssembly_checkAndComplete_noEvents() throws Exception {
+	void deny_panelNumberAtAssembly_panelAfterDepanel_noEvents() throws Exception {
 		ensureJoined(SERIAL_WRONG_STATION, WO_COLD_AMBIENT);
 
 		StationGateResponse checkResponse = check(SERIAL_WRONG_STATION, "AEL-01-ASM");
-		assertDenied(checkResponse, "WRONG_STATION", "COAT", MSG_WRONG_STATION_COAT);
-		assertEquals(WO_COLD_AMBIENT, checkResponse.getWorkOrderId());
-		assertEquals(PP_COLD_AMBIENT, checkResponse.getProcessPathId());
+		assertDenied(checkResponse, "PANEL_AFTER_DEPANEL", null, MSG_PANEL_AFTER_DEPANEL);
+		assertNull(checkResponse.getWorkOrderId());
+		assertNull(checkResponse.getProcessPathId());
 		assertEquals("ASM", checkResponse.getThisOp());
 
 		StationGateResponse completeResponse = complete(SERIAL_WRONG_STATION, "AEL-01-ASM");
-		assertDenied(completeResponse, "WRONG_STATION", "COAT", MSG_WRONG_STATION_COAT);
+		assertDenied(completeResponse, "PANEL_AFTER_DEPANEL", null, MSG_PANEL_AFTER_DEPANEL);
 		assertNull(completeResponse.getOutcome());
 
 		assertEventCount(SERIAL_WRONG_STATION, 0);
@@ -340,6 +307,21 @@ public class StationGateIntegrationTest {
 						.content(checkBody(serial, equipmentId)))
 				.andExpect(status().isOk())
 				.andReturn();
+		return readResponse(result);
+	}
+
+	private StationGateResponse quality(String serial, String equipmentId, String outcome) throws Exception {
+		Map<String, Object> body = new LinkedHashMap<>();
+		body.put("serialNumber", serial);
+		body.put("equipmentId", equipmentId);
+		body.put("equipmentLocalAt", LOCAL_AT);
+		body.put("outcome", outcome);
+		MvcResult result = mockMvc.perform(post(QUALITY_PATH)
+						.contentType(MediaType.APPLICATION_JSON)
+						.content(objectMapper.writeValueAsString(body)))
+				.andExpect(status().isOk())
+				.andReturn();
+		operationEventRepository.flush();
 		return readResponse(result);
 	}
 

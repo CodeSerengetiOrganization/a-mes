@@ -7,6 +7,7 @@
 **Sibling (later):** AS5-02 — station gate reads the PCBA. This contract does not.  
 **Gate contracts:** [`station-skip-ahead-gate.md`](station-skip-ahead-gate.md) · [`station-completes.md`](station-completes.md)  
 **Concurrency:** `a-mes-docs` → `requirements/tech-notes/28-tech-note-depanel-split-transaction-joins-panel-lock.md`  
+**Tests:** `a-mes-docs` → `requirements/tech-notes/29-tech-note-as5-01-what-each-depanel-test-covers.md`  
 **Package:** `com.ames.mes_api.depanel`  
 **Status:** **Kai draft** (2026-10-19) — not frozen. Jonathan reviews. No OpenAPI yet.
 
@@ -261,7 +262,7 @@ That row is not a fifth split row.
 | PCBA serial format regex | Pull request. The table does not encode it |
 | Demo seed or demo script | Pull request chooses one, so the K3s walk can pass Depanel |
 | OpenAPI / Swagger | Optional later |
-| `POST /api/station-completes` at `DEPANEL` | Stays as it is in this ticket. AS5-02 moves `DEPANEL` to quality-ops. A COMPLETE posted there then returns `WRONG_ENDPOINT`. The in-process split write still stores the Depanel split COMPLETE. |
+| `POST /api/station-completes` at `DEPANEL` | AS5-02 moved `DEPANEL` to quality-ops. A COMPLETE posted there returns `WRONG_ENDPOINT`. The in-process split write still stores the Depanel split COMPLETE. |
 
 ---
 

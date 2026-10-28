@@ -10,6 +10,8 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
+import com.ames.mes_api.depanel.DepanelSplitEntity;
+import com.ames.mes_api.depanel.DepanelSplitRepository;
 import com.ames.mes_api.panelregistration.PanelRegistrationEntity;
 import com.ames.mes_api.panelregistration.PanelRegistrationRepository;
 import com.ames.mes_api.panelregistration.WoPpBindingEntity;
@@ -83,11 +85,21 @@ public class StationGateService {
 			"Chamber soak is not a quality PASS/FAIL step";
 	private static final String MSG_WRONG_ENDPOINT_NOT_QUALITY =
 			"This station cannot append PASS/FAIL via the quality API";
+	private static final String REASON_PANEL_AFTER_DEPANEL = "PANEL_AFTER_DEPANEL";
+	private static final String MSG_PANEL_AFTER_DEPANEL = "Scan the PCBA serial.";
+	private static final String REASON_DEPANEL_FAIL_BLOCKED = "DEPANEL_FAIL_BLOCKED";
+	private static final String MSG_DEPANEL_FAIL_BLOCKED =
+			"This PCBA failed at Depanel. MES stored nothing.";
+	private static final String PANEL_NUMBER_PREFIX = "PANEL-";
+	private static final String PCBA_SERIAL_PREFIX = "PCBA-";
+	private static final String DEPANEL_OP = "DEPANEL";
 
 	private enum EndpointKind {
 		CHECK,
 		COMPLETE,
-		QUALITY
+		QUALITY,
+		/** In-process Depanel split COMPLETE. HTTP station-completes must not use this kind. */
+		DEPANEL_SPLIT
 	}
 
 	/**
@@ -102,10 +114,17 @@ public class StationGateService {
 	 */
 	private final Set<String> qualityOps;
 
+	/**
+	 * Ops where a panel number is not executable. Loaded from ames.station-gate.after-depanel-ops.
+	 * Includes the flexible EOL sentinel {@code EOL}. Not built from {@code process_path}.
+	 */
+	private final Set<String> afterDepanelOps;
+
 	private final PanelRegistrationRepository panelRegistrationRepository;
 	private final ProcessPathRepository processPathRepository;
 	private final WoPpBindingRepository woPpBindingRepository;
 	private final OperationEventRepository operationEventRepository;
+	private final DepanelSplitRepository depanelSplitRepository;
 	private final ObjectMapper objectMapper;
 
 	/**
@@ -115,25 +134,31 @@ public class StationGateService {
 	 * @param processPathRepository process path repository
 	 * @param woPpBindingRepository work order to process path binding repository
 	 * @param operationEventRepository operation event repository
+	 * @param depanelSplitRepository depanel split repository
 	 * @param objectMapper JSON object mapper
 	 * @param throughCompleteOpsCsv comma-separated through-complete op whitelist
 	 * @param qualityOpsCsv comma-separated quality op whitelist
+	 * @param afterDepanelOpsCsv comma-separated ops that refuse a panel number
 	 */
 	public StationGateService(
 			PanelRegistrationRepository panelRegistrationRepository,
 			ProcessPathRepository processPathRepository,
 			WoPpBindingRepository woPpBindingRepository,
 			OperationEventRepository operationEventRepository,
+			DepanelSplitRepository depanelSplitRepository,
 			ObjectMapper objectMapper,
 			@Value("${ames.station-gate.through-complete-ops}") String throughCompleteOpsCsv,
-			@Value("${ames.station-gate.quality-ops}") String qualityOpsCsv) {
+			@Value("${ames.station-gate.quality-ops}") String qualityOpsCsv,
+			@Value("${ames.station-gate.after-depanel-ops}") String afterDepanelOpsCsv) {
 		this.panelRegistrationRepository = panelRegistrationRepository;
 		this.processPathRepository = processPathRepository;
 		this.woPpBindingRepository = woPpBindingRepository;
 		this.operationEventRepository = operationEventRepository;
+		this.depanelSplitRepository = depanelSplitRepository;
 		this.objectMapper = objectMapper;
 		this.throughCompleteOps = parseOps("ames.station-gate.through-complete-ops", throughCompleteOpsCsv);
 		this.qualityOps = parseOps("ames.station-gate.quality-ops", qualityOpsCsv);
+		this.afterDepanelOps = parseOps("ames.station-gate.after-depanel-ops", afterDepanelOpsCsv);
 		Set<String> overlap = new HashSet<>(throughCompleteOps);
 		overlap.retainAll(qualityOps);
 		if (!overlap.isEmpty()) {
@@ -174,16 +199,19 @@ public class StationGateService {
 		String serialNumber = request.getSerialNumber().trim();
 		String equipmentId = request.getEquipmentId().trim();
 		logger.info("evaluateGate start serialNumber={} equipmentId={}", serialNumber, equipmentId);
+		StationGateResponse panelRefuse = panelAfterDepanelRefuse(serialNumber, equipmentId);
+		if (panelRefuse != null) {
+			return logAndReturn(panelRefuse);
+		}
 		return logAndReturn(evaluateGateCore(serialNumber, equipmentId, EndpointKind.CHECK).response());
 	}
 
 	/**
 	 * Append through-station COMPLETE evidence when the gate allows.
 	 *
-	 * <p>Takes {@code SELECT … FOR UPDATE} on the panel registration join row first so concurrent
-	 * COMPLETE requests for the same panel serialize (tech note 23). Stage-1 only: valid while the
-	 * scanned identity is a panel number — revisit at Depanel / AS-5 for unit serials. The lock is
-	 * released on commit/rollback; the join row is not updated by the lock itself. This is the approach to solve concurrent COMPLETE requests for the same panel.
+	 * <p>A panel number locks the panel registration row (tech note 23). A PCBA serial locks that
+	 * PCBA's split row and does not lock the panel. A panel number at an after-Depanel op is refused
+	 * before either lock. The lock is released on commit/rollback. The locked row is not updated.
 	 *
 	 * @param request station complete request
 	 * @return gate response with outcome COMPLETE on allow, or plant deny
@@ -222,6 +250,24 @@ public class StationGateService {
 	}
 
 	/**
+	 * Store the Depanel split COMPLETE for a panel number.
+	 *
+	 * <p>HTTP {@code POST /api/station-completes} must not use this method. Depanel is a quality op,
+	 * so that endpoint returns {@code WRONG_ENDPOINT}. This in-process call still stores
+	 * {@code COMPLETE} under the panel number and locks the panel row.
+	 *
+	 * @param request gate request for the panel number at PCB Depaneler
+	 * @return gate response with outcome COMPLETE on allow, or plant deny
+	 */
+	@Transactional
+	public StationGateResponse completeDepanelSplit(StationGateRequest request) {
+		String serialNumber = request.getSerialNumber().trim();
+		String equipmentId = request.getEquipmentId().trim();
+		logger.info("completeDepanelSplit start serialNumber={} equipmentId={}", serialNumber, equipmentId);
+		return appendAllowedOutcome(request, serialNumber, equipmentId, "COMPLETE", EndpointKind.DEPANEL_SPLIT);
+	}
+
+	/**
 	 * Lock, evaluate, append {@code operation_event} when allowed.
 	 *
 	 * @param request original request (for {@code equipmentLocalAt})
@@ -241,8 +287,17 @@ public class StationGateService {
 			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "equipmentLocalAt is required");
 		}
 
-		// Serialize concurrent writes per panel — lock join row (no panel UPDATE).
-		panelRegistrationRepository.findByPanelNumberForUpdate(serialNumber);
+		StationGateResponse panelRefuse = panelAfterDepanelRefuse(serialNumber, equipmentId);
+		if (panelRefuse != null) {
+			return logAndReturn(panelRefuse);
+		}
+
+		// PCBA writes lock the split row. Panel-number writes lock the join row. Neither updates the row.
+		if (isPcbaSerial(serialNumber)) {
+			depanelSplitRepository.findByPcbaSerialForUpdate(serialNumber);
+		} else {
+			panelRegistrationRepository.findByPanelNumberForUpdate(serialNumber);
+		}
 
 		GateEvaluation evaluation = evaluateGateCore(serialNumber, equipmentId, kind);
 		StationGateResponse gate = evaluation.response();
@@ -288,6 +343,10 @@ public class StationGateService {
 	 * @return gate evaluation including response, path ops, completed ops, and thisOp
 	 */
 	private GateEvaluation evaluateGateCore(String serialNumber, String equipmentId, EndpointKind kind) {
+		if (isPcbaSerial(serialNumber)) {
+			return evaluatePcba(serialNumber, equipmentId, kind);
+		}
+
 		// Step 1: ORPHAN — no Panel Registration join (or join without WO) → deny.
 		Optional<PanelRegistrationEntity> panelRegEntity =
 				panelRegistrationRepository.findByPanelNumber(serialNumber);
@@ -302,28 +361,84 @@ public class StationGateService {
 		}
 
 		// Step 2: known equipmentId? (EQUIPMENT_TO_OP or flexible EOL PC) — unknown → 400.
-		if (!EQUIPMENT_TO_OP.containsKey(equipmentId)
-				&& !FLEXIBLE_EOL_EQUIPMENT_IDS.contains(equipmentId)) {
-			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown EQUIPMENT_ID: " + equipmentId);
-		}
+		requireKnownEquipment(equipmentId);
 
-		// Step 3: load pathOps + completed ops (PASS/COMPLETE + LOADER via join) → expectedNext;
-		//         resolve thisOp (map or Pattern 2 flexible EOL); then
-		//         ALREADY_COMPLETE / allow / WRONG_STATION.
+		// Step 3: load pathOps + completed ops (PASS/COMPLETE + LOADER via join) → expectedNext.
 		ProcessPathContext processPathContext =
 				loadProcessPathContext(serialNumber, panelRegEntity.get().getWorkOrderId());
+		return decide(equipmentId, kind, processPathContext, false);
+	}
+
+	/**
+	 * Gate a PCBA serial from its split row. The parent panel supplies the work order.
+	 * The PCBA is not copied onto {@code panel_registration}.
+	 *
+	 * @param pcbaSerial scanned PCBA serial
+	 * @param equipmentId station equipment id
+	 * @param kind check, complete, or quality
+	 * @return gate evaluation
+	 */
+	private GateEvaluation evaluatePcba(String pcbaSerial, String equipmentId, EndpointKind kind) {
+		List<DepanelSplitEntity> rows = depanelSplitRepository.findByPcbaSerial(pcbaSerial);
+		if (rows.isEmpty()) {
+			return orphanEvaluation(equipmentId);
+		}
+		if (rows.size() != 1) {
+			throw new ResponseStatusException(
+					HttpStatus.CONFLICT, "PCBA serial is on more than one panel: " + pcbaSerial);
+		}
+
+		String panelNumber = rows.get(0).getPanelNumber();
+		Optional<PanelRegistrationEntity> panel = panelRegistrationRepository.findByPanelNumber(panelNumber);
+		if (panel.isEmpty() || panel.get().getWorkOrderId() == null) {
+			return orphanEvaluation(equipmentId);
+		}
+
+		requireKnownEquipment(equipmentId);
+		ProcessPathContext processPathContext =
+				loadPcbaContext(pcbaSerial, panel.get().getWorkOrderId());
+		return decide(equipmentId, kind, processPathContext, true);
+	}
+
+	/**
+	 * Apply the class fence, the Depanel FAIL block, then allow / already complete / wrong station.
+	 *
+	 * @param equipmentId station equipment id
+	 * @param kind endpoint kind
+	 * @param processPathContext loaded path
+	 * @param blockDepanelFail true when the scan is a PCBA serial
+	 * @return gate evaluation
+	 */
+	private GateEvaluation decide(
+			String equipmentId,
+			EndpointKind kind,
+			ProcessPathContext processPathContext,
+			boolean blockDepanelFail) {
 		String expectedNext = deriveNext(processPathContext.pathOps(), processPathContext.completedOps());
 		String thisOp = resolveThisOp(equipmentId, expectedNext);
 		if (kind == EndpointKind.COMPLETE && !isThroughCompleteOp(thisOp)) {
-			return endpointDeny(
-					wrongEndpointForComplete(thisOp, expectedNext), processPathContext, thisOp);
+			return endpointDeny(wrongEndpointForComplete(thisOp, expectedNext), processPathContext, thisOp);
 		}
 		if (kind == EndpointKind.QUALITY && !isQualityOp(thisOp)) {
-			return endpointDeny(
-					wrongEndpointForQuality(thisOp, expectedNext), processPathContext, thisOp);
+			return endpointDeny(wrongEndpointForQuality(thisOp, expectedNext), processPathContext, thisOp);
 		}
-		// Step3.4: check the thisOp is Already COMPLETE or expectedNext
-		// Already COMPLETE at this station → deny with current path next
+		if (kind == EndpointKind.DEPANEL_SPLIT && !DEPANEL_OP.equals(thisOp)) {
+			return endpointDeny(wrongEndpointForComplete(thisOp, expectedNext), processPathContext, thisOp);
+		}
+		if (blockDepanelFail
+				&& DEPANEL_OP.equals(thisOp)
+				&& kind != EndpointKind.COMPLETE
+				&& hasDepanelFail(processPathContext)) {
+			StationGateResponse blocked = deny(
+					REASON_DEPANEL_FAIL_BLOCKED, expectedNext, MSG_DEPANEL_FAIL_BLOCKED);
+			attachMesContext(
+					blocked,
+					processPathContext.workOrderId(),
+					processPathContext.processPathId(),
+					thisOp);
+			return new GateEvaluation(
+					blocked, processPathContext.pathOps(), processPathContext.completedOps(), thisOp);
+		}
 		StationGateResponse response;
 		if (processPathContext.completedOps().contains(thisOp)) {
 			response = deny("ALREADY_COMPLETE", expectedNext);
@@ -462,14 +577,126 @@ public class StationGateService {
 				.collect(Collectors.toSet());
 		//Panel Registration join means LOADER is done (no COMPLETE row required)
 		completedOps.add(LOADER_OP);
-		return new ProcessPathContext(pathOps, completedOps, workOrderId, processPathId);
+		return new ProcessPathContext(pathOps, completedOps, workOrderId, processPathId, serialNumber);
+	}
+
+	/**
+	 * Load the process path for a PCBA. Ops before {@code DEPANEL} count as done because the split
+	 * proves them. {@code DEPANEL} counts only after a PASS on this PCBA serial. The panel's Depanel
+	 * split COMPLETE does not count. A path with no {@code DEPANEL} counts no op as done.
+	 *
+	 * @param pcbaSerial scanned PCBA serial
+	 * @param workOrderId parent panel work order
+	 * @return process path context
+	 */
+	private ProcessPathContext loadPcbaContext(String pcbaSerial, String workOrderId) {
+		WoPpBindingEntity woPpBinding = woPpBindingRepository
+				.findById(workOrderId)
+				.orElseThrow(() -> new ResponseStatusException(
+						HttpStatus.BAD_REQUEST, "work order binding not found: " + workOrderId));
+		String processPathId = woPpBinding.getProcessPathId();
+		if (processPathId == null || processPathId.isBlank()) {
+			throw new ResponseStatusException(
+					HttpStatus.BAD_REQUEST, "process path id missing for work order: " + workOrderId);
+		}
+		ProcessPathEntity processPath = processPathRepository
+				.findById(processPathId)
+				.orElseThrow(() -> new ResponseStatusException(
+						HttpStatus.BAD_REQUEST, "process path not found: " + processPathId));
+		List<String> pathOps = parseOrderedOps(processPath.getContent());
+		Set<String> completedOps = completedOpsForPcba(pcbaSerial, pathOps);
+		return new ProcessPathContext(pathOps, completedOps, workOrderId, processPathId, pcbaSerial);
+	}
+
+	/**
+	 * Completed ops for one PCBA serial.
+	 *
+	 * @param pcbaSerial scanned PCBA serial
+	 * @param pathOps ordered process path ops
+	 * @return ops that count as done for this PCBA
+	 */
+	private Set<String> completedOpsForPcba(String pcbaSerial, List<String> pathOps) {
+		int depanelIndex = pathOps.indexOf(DEPANEL_OP);
+		if (depanelIndex < 0) {
+			return Set.of();
+		}
+		Set<String> completed = new HashSet<>();
+		for (int i = 0; i < depanelIndex; i++) {
+			completed.add(pathOps.get(i));
+		}
+		List<OperationEventEntity> events = operationEventRepository
+				.findBySerialNumberAndOutcomeInOrderByIdAsc(pcbaSerial, List.of("PASS", "COMPLETE"));
+		for (OperationEventEntity event : events) {
+			if (DEPANEL_OP.equals(event.getOpCode()) && !"PASS".equals(event.getOutcome())) {
+				continue;
+			}
+			completed.add(event.getOpCode());
+		}
+		return completed;
+	}
+
+	/**
+	 * True when this PCBA already has a Depanel FAIL.
+	 *
+	 * @param processPathContext context whose event serial is the PCBA
+	 * @return true when a Depanel FAIL is stored
+	 */
+	private boolean hasDepanelFail(ProcessPathContext processPathContext) {
+		return operationEventRepository
+				.findBySerialNumberAndOutcomeInOrderByIdAsc(processPathContext.eventSerial(), List.of("FAIL"))
+				.stream()
+				.anyMatch(event -> DEPANEL_OP.equals(event.getOpCode()));
+	}
+
+	/**
+	 * Refuse a panel number at an after-Depanel op before any table read.
+	 *
+	 * @param serialNumber trimmed serial
+	 * @param equipmentId trimmed equipment id
+	 * @return deny response, or null when this scan is not that case
+	 */
+	private StationGateResponse panelAfterDepanelRefuse(String serialNumber, String equipmentId) {
+		if (!isPanelNumber(serialNumber)) {
+			return null;
+		}
+		String thisOp = resolveThisOpForEcho(equipmentId);
+		if (thisOp == null || !afterDepanelOps.contains(thisOp)) {
+			return null;
+		}
+		return attachMesContext(
+				deny(REASON_PANEL_AFTER_DEPANEL, null, MSG_PANEL_AFTER_DEPANEL), null, null, thisOp);
+	}
+
+	private static boolean isPanelNumber(String serialNumber) {
+		return serialNumber.startsWith(PANEL_NUMBER_PREFIX);
+	}
+
+	private static boolean isPcbaSerial(String serialNumber) {
+		return serialNumber.startsWith(PCBA_SERIAL_PREFIX);
+	}
+
+	private static void requireKnownEquipment(String equipmentId) {
+		if (!EQUIPMENT_TO_OP.containsKey(equipmentId) && !FLEXIBLE_EOL_EQUIPMENT_IDS.contains(equipmentId)) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unknown EQUIPMENT_ID: " + equipmentId);
+		}
+	}
+
+	private GateEvaluation orphanEvaluation(String equipmentId) {
+		String thisOpOrphan = resolveThisOpForEcho(equipmentId);
+		StationGateResponse orphan =
+				attachMesContext(deny("ORPHAN", null, MSG_ORPHAN), null, null, thisOpOrphan);
+		return new GateEvaluation(orphan, List.of(), Set.of(), thisOpOrphan);
 	}
 
 	private record GateEvaluation(
 			StationGateResponse response, List<String> pathOps, Set<String> completedOps, String thisOp) {}
 
 	private record ProcessPathContext(
-			List<String> pathOps, Set<String> completedOps, String workOrderId, String processPathId) {}
+			List<String> pathOps,
+			Set<String> completedOps,
+			String workOrderId,
+			String processPathId,
+			String eventSerial) {}
 
 	/**
 	 * Resolve thisOp from equipment id (fixed map or Pattern 2 flexible EOL).

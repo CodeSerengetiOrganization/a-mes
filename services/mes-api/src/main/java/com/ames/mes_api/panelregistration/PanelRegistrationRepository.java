@@ -14,8 +14,8 @@ public interface PanelRegistrationRepository extends JpaRepository<PanelRegistra
 	Optional<PanelRegistrationEntity> findByPanelNumber(String panelNumber);
 
 	/**
-	 * Lock the join row with {@code SELECT … FOR UPDATE} for concurrent COMPLETE (tech note 23).
-	 * Stage-1: valid while scanned identity is a panel number — until Depanel / AS-5.
+	 * Lock the join row with {@code SELECT … FOR UPDATE} for concurrent writes of a panel number
+	 * (tech note 23). A PCBA serial locks {@code depanel_split} instead.
 	 *
 	 * @param panelNumber panel number (scan identity pre–AS-5)
 	 * @return join entity when present

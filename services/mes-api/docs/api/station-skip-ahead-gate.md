@@ -143,12 +143,14 @@ Contract assumes a **server-side map** `equipmentId → op_code`. Mapping table 
 | Class | Example `equipmentId` | Check (`POST /api/station-gate-checks`) |
 |-------|----------------------|----------------------------------------|
 | Loader (after join) | `AEL-01-LOADER` | **`ALREADY_COMPLETE`** — join = Loader done; `expectedNext` = path next (e.g. `COAT`) |
-| Quality (UV / EOL) | `AEL-01-UV`, `…-EOL` | If that op **is** path next → **`allowed: true`**; else → **`WRONG_STATION`** |
+| Quality (UV / Depanel / EOL) | `AEL-01-UV`, `AEL-01-DEPANEL`, `…-EOL` | If that op **is** path next → **`allowed: true`**; else → **`WRONG_STATION`** |
 | Chamber (non-path) | `AEL-01-COLD-CHAMBER`, `AEL-01-HOT-CHAMBER` | **`WRONG_STATION`** (not on process path) |
 | Through | `AEL-01-COAT`, … | Allow / `WRONG_STATION` / `ALREADY_COMPLETE` as usual |
 | Unknown | garbage id | **`400`** |
 
 Same ids on **COMPLETE** → `WRONG_ENDPOINT` (Loader · quality · chamber) — frozen in sibling doc.
+
+A panel number (`PANEL-…`) at an after-Depanel op (`CURE`, `ASM`, EOL, `PACK`, and flexible `EOL`) is `PANEL_AFTER_DEPANEL` before any table read. The message tells the operator to scan the PCBA serial. That refuse is not `ORPHAN`.
 
 ---
 

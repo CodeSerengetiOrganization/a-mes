@@ -43,10 +43,16 @@ class DepanelSplitServiceTest {
 				stationGateService, new DepanelSplitWriter(stationGateService, depanelSplitRepository));
 	}
 
+	/**
+	 * AS5-01 check 1, service half — the gate allows, and {@code insertSplit} receives slots
+	 * A1, A2, B1, B2 with the four PCBA serials.
+	 * The stored rows and the Depanel split COMPLETE are in
+	 * {@link DepanelSplitIntegrationTest#storedSplit_thenSecondRequest_readsRowsAndStoresNothingNew()}.
+	 */
 	@Test
 	void storesSplitWhenGateAllowsFourPcbaSerials() {
 		when(stationGateService.evaluateGate(any())).thenReturn(allowDepanel());
-		when(stationGateService.complete(any())).thenReturn(completed());
+		when(stationGateService.completeDepanelSplit(any())).thenReturn(completed());
 
 		DepanelSplitResponse response = service.split(goodRequest());
 
@@ -70,6 +76,10 @@ class DepanelSplitServiceTest {
 				rows.getValue().stream().map(DepanelSplitInsertRow::pcbaSerial).toList());
 	}
 
+	/**
+	 * AS5-01 check 4, {@code XOUT} case — one bad cavity returns HOLD and calls no write.
+	 * MySQL stored nothing is in {@link DepanelSplitIntegrationTest#xout_holdsAndStoresNothing()}.
+	 */
 	@Test
 	void holdStoresNothingWhenCavityIsXout() {
 		when(stationGateService.evaluateGate(any())).thenReturn(allowDepanel());
@@ -81,10 +91,13 @@ class DepanelSplitServiceTest {
 		assertFalse(response.isStored());
 		assertEquals("HOLD", response.getReasonCode());
 		assertEquals(DepanelSplitService.HOLD_MESSAGE, response.getMessage());
-		verify(stationGateService, never()).complete(any());
+		verify(stationGateService, never()).completeDepanelSplit(any());
 		verify(depanelSplitRepository, never()).insertSplit(any(), any(), any());
 	}
 
+	/**
+	 * AS5-01 check 4, missing-slot case — one missing slot returns HOLD and calls no write.
+	 */
 	@Test
 	void holdStoresNothingWhenOneSlotIsMissing() {
 		when(stationGateService.evaluateGate(any())).thenReturn(allowDepanel());
@@ -99,10 +112,14 @@ class DepanelSplitServiceTest {
 		assertFalse(response.isStored());
 		assertEquals("HOLD", response.getReasonCode());
 		assertEquals(DepanelSplitService.HOLD_MESSAGE, response.getMessage());
-		verify(stationGateService, never()).complete(any());
+		verify(stationGateService, never()).completeDepanelSplit(any());
 		verify(depanelSplitRepository, never()).insertSplit(any(), any(), any());
 	}
 
+	/**
+	 * Not an AS5-01 check. Approach item 5 — a station-gate refuse stores nothing.
+	 * AS-3 owns the refuse reason. Former ticket check 3 was removed.
+	 */
 	@Test
 	void gateRefuseStoresNothing() {
 		StationGateResponse denied = new StationGateResponse();
@@ -116,17 +133,23 @@ class DepanelSplitServiceTest {
 		assertFalse(response.isStored());
 		assertEquals("WRONG_STATION", response.getReasonCode());
 		assertEquals("Depanel is not the next step. MES stored nothing.", response.getMessage());
-		verify(stationGateService, never()).complete(any());
+		verify(stationGateService, never()).completeDepanelSplit(any());
 		verify(depanelSplitRepository, never()).insertSplit(any(), any(), any());
 	}
 
+	/**
+	 * AS5-01 check 5, service half — when the gate returns {@code ALREADY_COMPLETE},
+	 * {@code insertSplit} is not called.
+	 * The second request after a stored split is in
+	 * {@link DepanelSplitIntegrationTest#storedSplit_thenSecondRequest_readsRowsAndStoresNothingNew()}.
+	 */
 	@Test
 	void secondSplitStoresNothing() {
 		when(stationGateService.evaluateGate(any())).thenReturn(allowDepanel());
 		StationGateResponse already = new StationGateResponse();
 		already.setAllowed(false);
 		already.setReasonCode("ALREADY_COMPLETE");
-		when(stationGateService.complete(any())).thenReturn(already);
+		when(stationGateService.completeDepanelSplit(any())).thenReturn(already);
 
 		DepanelSplitResponse response = service.split(goodRequest());
 
@@ -136,6 +159,9 @@ class DepanelSplitServiceTest {
 		verify(depanelSplitRepository, never()).insertSplit(any(), any(), any());
 	}
 
+	/**
+	 * Not an AS5-01 check. A blank panel number is rejected before the station gate.
+	 */
 	@Test
 	void blankPanelNumberRejectsBeforeGate() {
 		DepanelSplitRequest request = goodRequest();
@@ -148,6 +174,9 @@ class DepanelSplitServiceTest {
 		assertRejectedBeforeGate();
 	}
 
+	/**
+	 * Not an AS5-01 check. A missing {@code equipmentLocalAt} is rejected before the station gate.
+	 */
 	@Test
 	void missingEquipmentLocalAtRejectsBeforeGate() {
 		DepanelSplitRequest request = goodRequest();
@@ -160,6 +189,11 @@ class DepanelSplitServiceTest {
 		assertRejectedBeforeGate();
 	}
 
+	/**
+	 * AS5-01 check 3, service half — a panel number and no cavities is rejected before the station gate.
+	 * The HTTP 400 is in
+	 * {@link DepanelSplitControllerTest#split_whenCavitiesEmpty_returns400AndDoesNotCallService()}.
+	 */
 	@Test
 	void emptyCavitiesRejectsBeforeGate() {
 		DepanelSplitRequest request = goodRequest();
@@ -174,7 +208,7 @@ class DepanelSplitServiceTest {
 
 	private void assertRejectedBeforeGate() {
 		verify(stationGateService, never()).evaluateGate(any());
-		verify(stationGateService, never()).complete(any());
+		verify(stationGateService, never()).completeDepanelSplit(any());
 		verify(depanelSplitRepository, never()).insertSplit(any(), any(), any());
 	}
 
