@@ -11,9 +11,10 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Write transaction for one depanel split.
  *
- * <p>The first database read in this transaction is the {@code panel_registration} row lock inside
- * {@link StationGateService#complete}. A concurrent second split waits on that lock. The station
- * gate then returns {@code ALREADY_COMPLETE}. This class does not map a unique-key error.
+	 * <p>The first database read in this transaction is the {@code panel_registration} row lock inside
+	 * {@link StationGateService#completeDepanelSplit}. A concurrent second split waits on that lock.
+	 * The station gate then returns {@code ALREADY_COMPLETE}. This class does not map a unique-key error.
+	 * HTTP {@code POST /api/station-completes} must not call that method. Depanel is a quality op.
  */
 @Service
 public class DepanelSplitWriter {
@@ -42,7 +43,7 @@ public class DepanelSplitWriter {
 			StationGateRequest gateRequest,
 			List<DepanelSplitInsertRow> orderedRows,
 			LocalDateTime equipmentLocalAt) {
-		StationGateResponse completed = stationGateService.complete(gateRequest);
+		StationGateResponse completed = stationGateService.completeDepanelSplit(gateRequest);
 		if (!completed.isAllowed()) {
 			return DepanelSplitService.refuse(panelNumber, completed.getReasonCode());
 		}

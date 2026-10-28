@@ -100,13 +100,13 @@ The write path **owns** COMPLETE rules. It does **not** require calling or reusi
    - **Known Loader** (e.g. `AEL-01-LOADER`) → **`200`**, `allowed: false`, `reasonCode: WRONG_ENDPOINT`, `message` that LOADER is satisfied by **Panel Registration** — not this API — **no** append  
    - **Known UV or EOL** (quality stations) → **`200`**, `allowed: false`, `reasonCode: WRONG_ENDPOINT`, clear `message` — **no** append  
    - **Known Cold/Hot Chamber** (non-path soak assets) → **`200`**, `allowed: false`, `reasonCode: WRONG_ENDPOINT`, `message` that chamber soak is **not** a station-completes step — **no** append  
-   - **Known through** → map to `op_code` (`COAT`, `DEPANEL`, `CURE`, `ASM`, `PACK`, …) — **not** `LOADER` / chamber / UV / EOL  
+   - **Known through** → map to `op_code` (`COAT`, `CURE`, `ASM`, `PACK`, …) — **not** `LOADER` / chamber / UV / Depanel / EOL  
 4. Load process path + **expected next** (derive from path + completed ops — PASS ∪ COMPLETE count as done; FAIL does not — tech note 17)  
 5. If this op is **already done** for this serial — **any** `operation_event` row with `outcome` in {`COMPLETE`, `PASS`} for this serial + op → **`200`**, `allowed: false`, `reasonCode: ALREADY_COMPLETE`, `expectedNext` = current path next — **no** append; next does **not** advance again. (**Frozen — same set as deriveNext.** Through stations should only ever store `COMPLETE`; treating `PASS` as done still blocks a second append if bad/seeded data advanced the path.)  
 6. If this op ≠ expected next → **`200`**, `allowed: false`, `reasonCode: WRONG_STATION`, `expectedNext` = path next — **no** append  
 7. Else → **append** one `operation_event` row (`outcome=COMPLETE`, `op_code`, `equipment_id`, `equipment_local_at`) → **`200`**, `allowed: true`, `expectedNext` = **following** path step
 
-**Through ops only:** Coat · Depanel · Cure · Assembly · Pack (when Pack is next).  
+**Through ops only:** Coat · Cure · Assembly · Pack (when Pack is next). Depanel is a quality op (AS5-02). The in-process split write is the only COMPLETE at Depanel.  
 **LOADER (frozen — Option A):** known Loader `equipmentId` on this API → **`WRONG_ENDPOINT`** (message names Panel Registration). Join = LOADER done — **never** append Loader COMPLETE here.  
 **UV / EOL:** quality **PASS** / **FAIL** on a separate endpoint (AS-4) — **not** here.  
 **Cold / Hot Chamber (frozen — stage 1):** known chamber `equipmentId` on this API → **`WRONG_ENDPOINT`** (same code; message names chamber soak ≠ COMPLETE). Put chambers **on the map** as non-path — do **not** leave them off (silent `400`) or on the through list (silent COMPLETE). No dedicated chamber reason code.
@@ -271,9 +271,9 @@ Server-side map classifies each known `equipmentId`. Stage-1 examples:
 
 | Class | Example `equipmentId` | This API |
 |-------|----------------------|----------|
-| Through | `AEL-01-COAT`, `AEL-01-DEPANEL`, `AEL-01-CURE`, `AEL-01-ASM`, `AEL-01-PACK` | Allow when next → append `COMPLETE` |
+| Through | `AEL-01-COAT`, `AEL-01-CURE`, `AEL-01-ASM`, `AEL-01-PACK` | Allow when next → append `COMPLETE` |
 | Loader (bootstrap) | `AEL-01-LOADER` | **`200` + `WRONG_ENDPOINT`** — Panel Registration only |
-| Quality | `AEL-01-UV`, `AEL-01-COLD-EOL`, `AEL-01-HOT-EOL`, `AEL-01-AMBIENT-EOL` | **`200` + `WRONG_ENDPOINT`** — quality API |
+| Quality | `AEL-01-UV`, `AEL-01-DEPANEL`, `AEL-01-COLD-EOL`, `AEL-01-HOT-EOL`, `AEL-01-AMBIENT-EOL` | **`200` + `WRONG_ENDPOINT`** — quality API |
 | Chamber (non-path) | `AEL-01-COLD-CHAMBER`, `AEL-01-HOT-CHAMBER` | **`200` + `WRONG_ENDPOINT`** — soak ≠ COMPLETE |
 | Unknown | `AEL-01-NOT-REAL` | **`400`** |
 
