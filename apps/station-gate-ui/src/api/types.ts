@@ -32,8 +32,30 @@ export interface StationGateResponse {
   outcome?: Outcome | null
 }
 
+export interface DepanelCavity {
+  slot: string
+  cavityResult: string
+}
+
+export interface DepanelSplitRequest {
+  panelNumber: string
+  equipmentId: string
+  equipmentLocalAt: string
+  cavities: DepanelCavity[]
+}
+
+/** `POST /api/depanel-splits`. `stored` is the plant fact. This body has no `allowed` field. */
+export interface DepanelSplitResponse {
+  stored: boolean
+  panelNumber: string
+  reasonCode: string | null
+  message: string | null
+  outcome: string | null
+}
+
 export interface StationGateClient {
   checkGate(request: GateCheckRequest): Promise<StationGateResponse>
   completeStation(request: StationCompleteRequest): Promise<StationGateResponse>
   recordQualityResult(request: QualityResultRequest): Promise<StationGateResponse>
+  splitDepanel(request: DepanelSplitRequest): Promise<DepanelSplitResponse>
 }

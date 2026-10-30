@@ -1,4 +1,6 @@
 import type {
+  DepanelSplitRequest,
+  DepanelSplitResponse,
   GateCheckRequest,
   QualityResultRequest,
   StationCompleteRequest,
@@ -51,5 +53,28 @@ export function createHttpStationGateClient(baseUrl: string = MES_API_BASE_URL):
     completeStation: (request: StationCompleteRequest) => post('/api/station-completes', request),
     recordQualityResult: (request: QualityResultRequest) =>
       post('/api/station-quality-results', request),
+    splitDepanel: (request: DepanelSplitRequest) => postSplit(baseUrl, request),
   }
+}
+
+async function postSplit(baseUrl: string, body: DepanelSplitRequest): Promise<DepanelSplitResponse> {
+  let response: Response
+  try {
+    response = await fetch(`${baseUrl}/api/depanel-splits`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  } catch {
+    throw new Error(`Cannot reach MES at ${baseUrl} — is mes-api running?`)
+  }
+
+  const data: unknown = await response.json().catch(() => null)
+  if (!response.ok) {
+    throw new Error(errorReason(data, response.status, response.statusText))
+  }
+  if (!data || typeof data !== 'object' || typeof (data as DepanelSplitResponse).stored !== 'boolean') {
+    throw new Error(`Unexpected response from MES (${response.status})`)
+  }
+  return data as DepanelSplitResponse
 }

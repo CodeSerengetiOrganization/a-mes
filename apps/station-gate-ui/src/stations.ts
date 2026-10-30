@@ -15,7 +15,7 @@ export interface Station {
 export const STATIONS: readonly Station[] = [
   { equipmentId: 'AEL-01-COAT', label: 'Conformal Coating Machine', stationClass: 'through' },
   { equipmentId: 'AEL-01-UV', label: 'UV Inspection Machine', stationClass: 'quality' },
-  { equipmentId: 'AEL-01-DEPANEL', label: 'PCB Depaneler', stationClass: 'through' },
+  { equipmentId: 'AEL-01-DEPANEL', label: 'PCB Depaneler', stationClass: 'quality' },
   { equipmentId: 'AEL-01-CURE', label: 'Curing Oven', stationClass: 'through' },
   { equipmentId: 'AEL-01-ASM', label: 'Assembly Station', stationClass: 'through' },
   { equipmentId: 'AEL-01-COLD-EOL', label: 'Cold EOL Tester', stationClass: 'quality' },
