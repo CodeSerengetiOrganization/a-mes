@@ -46,14 +46,13 @@ function App({ client }: AppProps) {
   const canStartDepanel =
     isDepanel && depanelStep === 'scan' && cavitySerials.every((value) => value.trim() !== '')
   const cutting = depanelStep === 'cutting'
-  const allResultsStored =
-    depanelSent.length === CAVITY_SLOTS.length &&
-    depanelSent.every((attempt) => attempt.response?.allowed === true)
+  /** A stored quality result changes only through rework, so one stored result locks the whole eye check. */
+  const anyResultStored = depanelSent.some((attempt) => attempt.response?.allowed === true)
   const canSendDepanelResults =
     isDepanel &&
     depanelStep === 'eyeCheck' &&
     depanelResults.every((result) => result !== null) &&
-    !allResultsStored
+    !anyResultStored
 
   async function run(action: Action, call: () => Promise<StationGateResponse>) {
     if (submitting) {
@@ -253,6 +252,7 @@ function App({ client }: AppProps) {
                         className={`button outcome ${outcome.toLowerCase()}`}
                         aria-label={`${outcome} ${label}`}
                         aria-pressed={depanelResults[index] === outcome}
+                        disabled={anyResultStored}
                         onClick={() => toggleDepanelResult(index, outcome)}
                       >
                         {outcome}

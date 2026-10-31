@@ -56,6 +56,7 @@ async function sendPassForEachPcba() {
     await user.click(screen.getByRole('button', { name: `PASS ${label}` }))
   }
   await user.click(screen.getByRole('button', { name: 'Send Depanel Results' }))
+  await screen.findAllByText(/^Next station:/)
   return user
 }
 
@@ -357,7 +358,7 @@ describe('Station Gate screen (AS3-03)', () => {
     expect(screen.queryByRole('button', { name: 'Send Depanel Results' })).not.toBeInTheDocument()
   }, 15000)
 
-  it('Send Depanel Results stays when MES refuses one of the results', async () => {
+  it('one stored result hides Send Depanel Results and locks PASS and FAIL, even when MES refuses another', async () => {
     const client = createFakeStationGateClient()
     vi.spyOn(client, 'recordQualityResult').mockImplementationOnce(async () => ({
       allowed: false,
@@ -375,7 +376,26 @@ describe('Station Gate screen (AS3-03)', () => {
     }
     await user.click(screen.getByRole('button', { name: 'Send Depanel Results' }))
 
-    expect(screen.getByRole('button', { name: 'Send Depanel Results' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Send Depanel Results' })).not.toBeInTheDocument()
+    for (const label of CAVITY_LABELS) {
+      expect(screen.getByRole('button', { name: `PASS ${label}` })).toBeDisabled()
+      expect(screen.getByRole('button', { name: `FAIL ${label}` })).toBeDisabled()
+    }
+  }, 15000)
+
+  it('check 19 — after the send, PASS and FAIL are locked and the selection does not change', async () => {
+    const user = await sendPassForEachPcba()
+    const [first] = CAVITY_LABELS
+    const pass = screen.getByRole('button', { name: `PASS ${first}` })
+    const fail = screen.getByRole('button', { name: `FAIL ${first}` })
+
+    expect(pass).toBeDisabled()
+    expect(fail).toBeDisabled()
+    await user.click(fail)
+    await user.click(pass)
+
+    expect(pass).toHaveAttribute('aria-pressed', 'true')
+    expect(fail).toHaveAttribute('aria-pressed', 'false')
   }, 15000)
 
   it('check 13 — a bad cavity shows the hold message and does not start the cut', async () => {
