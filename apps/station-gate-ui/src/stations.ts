@@ -46,6 +46,13 @@ export function findStation(equipmentId: string): Station | undefined {
   return STATIONS.find((station) => station.equipmentId === equipmentId)
 }
 
+const CURE_INDEX = STATIONS.findIndex((station) => station.equipmentId === 'AEL-01-CURE')
+
+/** Cure and every station after it scan the PCBA serial, not the panel number. Relies on STATIONS being in line order. */
+export function isAtOrAfterCure(equipmentId: string): boolean {
+  return STATIONS.findIndex((station) => station.equipmentId === equipmentId) >= CURE_INDEX
+}
+
 export function outcomesFor(stationClass: StationClass): Outcome[] {
   return stationClass === 'through' ? ['COMPLETE'] : ['PASS', 'FAIL']
 }

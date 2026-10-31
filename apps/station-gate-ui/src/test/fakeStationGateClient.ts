@@ -1,5 +1,6 @@
 import type {
   DepanelSplitRequest,
+  DepanelSplitResponse,
   GateCheckRequest,
   QualityResultRequest,
   StationCompleteRequest,
@@ -47,6 +48,7 @@ type Kind = 'check' | 'complete' | 'quality'
 
 export function createFakeStationGateClient(options: FakeClientOptions = {}): StationGateClient {
   const joins = new Map(Object.entries(DEMO_JOINS))
+  const splitPanels = new Set<string>()
   const done = new Map<string, Set<string>>()
   for (const serial of joins.keys()) {
     done.set(serial, new Set(['LOADER', ...(options.completedOps?.[serial] ?? [])]))
@@ -122,24 +124,44 @@ export function createFakeStationGateClient(options: FakeClientOptions = {}): St
       return { ...response, expectedNext: expectedNext(serial), outcome: request.outcome }
     },
     async splitDepanel(request: DepanelSplitRequest) {
-      const panelJoin = joins.get(request.panelNumber.trim())
-      if (panelJoin) {
-        const ops = PROCESS_PATH_OPS[panelJoin.processPathId]
-        const beforeDepanel = ops.slice(0, ops.indexOf('DEPANEL'))
-        for (const cavity of request.cavities) {
-          joins.set(cavity.cavityResult, panelJoin)
-          done.set(cavity.cavityResult, new Set(beforeDepanel))
-        }
+      const panelNumber = request.panelNumber.trim()
+      const panelJoin = joins.get(panelNumber)
+      if (!panelJoin) {
+        return refuseSplit(panelNumber, 'ORPHAN', 'Panel is not on a work order. MES stored nothing.')
+      }
+      if (splitPanels.has(panelNumber)) {
+        return refuseSplit(panelNumber, 'ALREADY_COMPLETE', 'This panel is already split. MES stored nothing.')
+      }
+      const serials = request.cavities.map((cavity) => cavity.cavityResult.trim())
+      if (serials.some((serial) => !isPcbaSerial(serial)) || new Set(serials).size !== serials.length) {
+        return refuseSplit(panelNumber, 'HOLD', 'Bad cavity. MES stored nothing.')
+      }
+
+      splitPanels.add(panelNumber)
+      const ops = PROCESS_PATH_OPS[panelJoin.processPathId]
+      const beforeDepanel = ops.slice(0, ops.indexOf('DEPANEL'))
+      for (const serial of serials) {
+        joins.set(serial, panelJoin)
+        done.set(serial, new Set(beforeDepanel))
       }
       return {
         stored: true,
-        panelNumber: request.panelNumber,
+        panelNumber,
         reasonCode: null,
         message: null,
         outcome: 'COMPLETE',
       }
     },
   }
+}
+
+/** Same shape as DepanelSplitService: XOUT, EMPTY, and UNREADABLE fail this too, because they do not start with PCBA. */
+function isPcbaSerial(serial: string): boolean {
+  return serial.startsWith('PCBA') && serial.length >= 10 && serial.length <= 64
+}
+
+function refuseSplit(panelNumber: string, reasonCode: string, message: string): DepanelSplitResponse {
+  return { stored: false, panelNumber, reasonCode, message, outcome: null }
 }
 
 function deny(

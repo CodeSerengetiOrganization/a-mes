@@ -11,13 +11,13 @@ import type {
 import LatestResult, { type Attempt } from './components/LatestResult'
 import SessionLog, { type LogEntry } from './components/SessionLog'
 import type { Action } from './result'
-import { STATIONS, findStation, opLabel, outcomesFor } from './stations'
+import { STATIONS, findStation, isAtOrAfterCure, opLabel, outcomesFor } from './stations'
 
 interface AppProps {
   client: StationGateClient
 }
 
-const CUT_SIMULATION_MS = 5000
+const CUT_SIMULATION_MS = 8000
 /** Cavity slots on this part's panel. The number of cavities comes from this list only. */
 const CAVITY_SLOTS = ['A1', 'A2', 'B1', 'B2']
 
@@ -34,6 +34,7 @@ function App({ client }: AppProps) {
   const [depanelStep, setDepanelStep] = useState<DepanelStep>('scan')
   const [depanelResults, setDepanelResults] = useState(emptyDepanelResults)
   const [depanelSent, setDepanelSent] = useState<Attempt[]>([])
+  const [splitPanel, setSplitPanel] = useState<string | null>(null)
   const [checkAllowed, setCheckAllowed] = useState(false)
   const [latest, setLatest] = useState<Attempt | null>(null)
   const [log, setLog] = useState<LogEntry[]>([])
@@ -42,9 +43,17 @@ function App({ client }: AppProps) {
   const station = findStation(equipmentId)!
   const serial = serialNumber.trim()
   const isDepanel = station.equipmentId === 'AEL-01-DEPANEL'
-  const canStartDepanel = isDepanel && cavitySerials.every((value) => value.trim() !== '')
+  const canStartDepanel =
+    isDepanel && depanelStep === 'scan' && cavitySerials.every((value) => value.trim() !== '')
+  const cutting = depanelStep === 'cutting'
+  const allResultsStored =
+    depanelSent.length === CAVITY_SLOTS.length &&
+    depanelSent.every((attempt) => attempt.response?.allowed === true)
   const canSendDepanelResults =
-    isDepanel && depanelStep === 'eyeCheck' && depanelResults.every((result) => result !== null)
+    isDepanel &&
+    depanelStep === 'eyeCheck' &&
+    depanelResults.every((result) => result !== null) &&
+    !allResultsStored
 
   async function run(action: Action, call: () => Promise<StationGateResponse>) {
     if (submitting) {
@@ -70,8 +79,24 @@ function App({ client }: AppProps) {
     setLog((entries) => [...entries, { ...attempt, id: entries.length + 1, at }])
   }
 
+  function resetDepanel() {
+    setCavitySerials(emptyCavitySerials())
+    setDepanelResults(emptyDepanelResults())
+    setDepanelSent([])
+    setDepanelStep('scan')
+    setSplitPanel(null)
+  }
+
+  /** Runs when a scan in the serial box ends. Keystrokes alone cannot tell a new panel number from the same one. */
+  function finishPanelScan() {
+    if (splitPanel !== null && serial !== splitPanel) {
+      resetDepanel()
+    }
+  }
+
   function handleCheck(event: FormEvent) {
     event.preventDefault()
+    finishPanelScan()
     if (!serial) {
       return
     }
@@ -90,6 +115,7 @@ function App({ client }: AppProps) {
         })),
       })
       if (split.stored) {
+        setSplitPanel(serial)
         setDepanelResults(emptyDepanelResults())
         setDepanelSent([])
         setDepanelStep('cutting')
@@ -167,9 +193,13 @@ function App({ client }: AppProps) {
           <select
             id="station"
             value={equipmentId}
+            disabled={cutting}
             onChange={(e) => {
               setEquipmentId(e.target.value)
               setCheckAllowed(false)
+              if (isAtOrAfterCure(e.target.value)) {
+                setSerialNumber('')
+              }
             }}
           >
             {STATIONS.map((option) => (
@@ -186,10 +216,12 @@ function App({ client }: AppProps) {
             id="serial-number"
             type="text"
             value={serialNumber}
+            disabled={cutting}
             onChange={(e) => {
               setSerialNumber(e.target.value)
               setCheckAllowed(false)
             }}
+            onBlur={finishPanelScan}
             placeholder={isDepanel ? 'Scan panel number' : 'Scan or type serial number'}
             autoFocus
           />
@@ -205,6 +237,7 @@ function App({ client }: AppProps) {
                   id={`pcba-${label}`}
                   type="text"
                   value={value}
+                  disabled={cutting}
                   onChange={(event) => {
                     const next = [...cavitySerials]
                     next[index] = event.target.value
@@ -237,7 +270,7 @@ function App({ client }: AppProps) {
             })
           : null}
 
-        {isDepanel && depanelStep === 'cutting' ? (
+        {isDepanel && cutting ? (
           <p className="depanel-status" role="status">
             Depanelling in process
           </p>
@@ -302,7 +335,8 @@ function toGateResponse(split: DepanelSplitResponse): StationGateResponse {
     processPathId: null,
     thisOp: 'DEPANEL',
     expectedNext: null,
-    reasonCode: split.reasonCode,
+    // The split endpoint already sends plant wording; a reason code here would swap it for gate-check text.
+    reasonCode: null,
     message: split.message,
     outcome: split.stored ? 'COMPLETE' : null,
   }
