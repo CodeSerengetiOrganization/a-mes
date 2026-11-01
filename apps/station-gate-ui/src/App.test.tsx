@@ -17,11 +17,15 @@ function setup(options?: FakeClientOptions) {
   return { client, user }
 }
 
+/** A barcode scan: replace the field's value in one change. Focus moves first, so blur fires like a real scan. */
+async function scan(user: UserEvent, field: HTMLElement, value: string) {
+  await user.clear(field)
+  await user.paste(value)
+}
+
 async function gateCheck(user: UserEvent, stationLabel: string, serial = SERIAL) {
   await user.selectOptions(screen.getByLabelText('Station'), stationLabel)
-  const input = screen.getByLabelText('Serial number')
-  await user.clear(input)
-  await user.type(input, serial)
+  await scan(user, screen.getByLabelText('Serial number'), serial)
   await user.click(screen.getByRole('button', { name: 'Gate check' }))
 }
 
@@ -31,9 +35,9 @@ async function reachEyeCheck(client = createFakeStationGateClient()) {
   render(<App client={client} />)
 
   await user.selectOptions(screen.getByLabelText('Station'), 'PCB Depaneler')
-  await user.type(screen.getByLabelText('Serial number'), 'PANEL-DEMO-002')
+  await scan(user, screen.getByLabelText('Serial number'), 'PANEL-DEMO-002')
   for (const label of CAVITY_LABELS) {
-    await user.type(screen.getByLabelText(label), `${label}-0001`)
+    await scan(user, screen.getByLabelText(label), `${label}-0001`)
   }
 
   vi.useFakeTimers()
@@ -62,9 +66,7 @@ async function sendPassForEachPcba() {
 
 async function scanPanelAtCoating(user: UserEvent, panelNumber: string) {
   await user.selectOptions(screen.getByLabelText('Station'), 'Conformal Coating Machine')
-  const box = screen.getByLabelText('Serial number')
-  await user.clear(box)
-  await user.type(box, panelNumber)
+  await scan(user, screen.getByLabelText('Serial number'), panelNumber)
   await user.click(screen.getByRole('button', { name: 'Gate check' }))
 }
 
@@ -165,6 +167,14 @@ describe('Station Gate screen (AS3-03)', () => {
     expect(latest().getByText('Depanel (DEPANEL)')).toBeInTheDocument()
   })
 
+  it('check 1 — a station other than PCB Depaneler shows no cavity inputs', () => {
+    setup()
+
+    for (const label of CAVITY_LABELS) {
+      expect(screen.queryByLabelText(label)).not.toBeInTheDocument()
+    }
+  })
+
   it('Depanel keeps the serial box and shows four PCBA inputs', async () => {
     const { user } = setup()
 
@@ -175,9 +185,41 @@ describe('Station Gate screen (AS3-03)', () => {
     expect(screen.getByLabelText('PCBA-A2')).toBeInTheDocument()
     expect(screen.getByLabelText('PCBA-B1')).toBeInTheDocument()
     expect(screen.getByLabelText('PCBA-B2')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Gate check' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /PASS|FAIL/ })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Start Depanel' })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Send Depanel Results' })).not.toBeInTheDocument()
   })
+
+  it('Enter in the serial box at PCB Depaneler runs no gate check and shows no stub PASS or FAIL', async () => {
+    const client = createFakeStationGateClient({ completedOps: { [SERIAL]: ['COAT', 'UV'] } })
+    const checkGate = vi.spyOn(client, 'checkGate')
+    const recordQualityResult = vi.spyOn(client, 'recordQualityResult')
+    const user = userEvent.setup({ delay: null })
+    render(<App client={client} />)
+
+    await user.selectOptions(screen.getByLabelText('Station'), 'PCB Depaneler')
+    await scan(user, screen.getByLabelText('Serial number'), SERIAL)
+    await user.keyboard('{Enter}')
+
+    expect(checkGate).not.toHaveBeenCalled()
+    expect(recordQualityResult).not.toHaveBeenCalled()
+    expect(screen.queryByRole('button', { name: /PASS|FAIL/ })).not.toBeInTheDocument()
+    for (const label of CAVITY_LABELS) {
+      expect(screen.getByLabelText(label)).toBeInTheDocument()
+    }
+  }, 15000)
+
+  it('stub PASS and FAIL from another station are gone at PCB Depaneler', async () => {
+    const { user } = setup({ completedOps: { [SERIAL]: ['COAT'] } })
+
+    await gateCheck(user, 'UV Inspection Machine')
+    expect(screen.getByRole('button', { name: 'PASS (stub)' })).toBeInTheDocument()
+
+    await user.selectOptions(screen.getByLabelText('Station'), 'PCB Depaneler')
+
+    expect(screen.queryByRole('button', { name: /PASS|FAIL/ })).not.toBeInTheDocument()
+  }, 15000)
 
   it('shows Start Depanel after four PCBA serials', async () => {
     const { user } = setup()
@@ -200,11 +242,10 @@ describe('Station Gate screen (AS3-03)', () => {
     render(<App client={client} />)
 
     await user.selectOptions(screen.getByLabelText('Station'), 'PCB Depaneler')
-    await user.type(screen.getByLabelText('Serial number'), 'PANEL-DEMO-002')
-    await user.type(screen.getByLabelText('PCBA-A1'), 'PCBA-A1-0001')
-    await user.type(screen.getByLabelText('PCBA-A2'), 'PCBA-A2-0001')
-    await user.type(screen.getByLabelText('PCBA-B1'), 'PCBA-B1-0001')
-    await user.type(screen.getByLabelText('PCBA-B2'), 'PCBA-B2-0001')
+    await scan(user, screen.getByLabelText('Serial number'), 'PANEL-DEMO-002')
+    for (const label of CAVITY_LABELS) {
+      await scan(user, screen.getByLabelText(label), `${label}-0001`)
+    }
     await user.click(screen.getByRole('button', { name: 'Start Depanel' }))
 
     expect(splitDepanel).toHaveBeenCalledTimes(1)
@@ -227,9 +268,9 @@ describe('Station Gate screen (AS3-03)', () => {
     render(<App client={createFakeStationGateClient()} />)
 
     await user.selectOptions(screen.getByLabelText('Station'), 'PCB Depaneler')
-    await user.type(screen.getByLabelText('Serial number'), 'PANEL-DEMO-002')
+    await scan(user, screen.getByLabelText('Serial number'), 'PANEL-DEMO-002')
     for (const label of CAVITY_LABELS) {
-      await user.type(screen.getByLabelText(label), `${label}-0001`)
+      await scan(user, screen.getByLabelText(label), `${label}-0001`)
     }
 
     vi.useFakeTimers()
@@ -263,9 +304,9 @@ describe('Station Gate screen (AS3-03)', () => {
     render(<App client={createFakeStationGateClient()} />)
 
     await user.selectOptions(screen.getByLabelText('Station'), 'PCB Depaneler')
-    await user.type(screen.getByLabelText('Serial number'), SERIAL)
+    await scan(user, screen.getByLabelText('Serial number'), SERIAL)
     for (const label of CAVITY_LABELS) {
-      await user.type(screen.getByLabelText(label), `${label}-0001`)
+      await scan(user, screen.getByLabelText(label), `${label}-0001`)
     }
     const locked = () => [
       screen.getByLabelText('Station'),
@@ -403,11 +444,11 @@ describe('Station Gate screen (AS3-03)', () => {
     render(<App client={createFakeStationGateClient()} />)
 
     await user.selectOptions(screen.getByLabelText('Station'), 'PCB Depaneler')
-    await user.type(screen.getByLabelText('Serial number'), SERIAL)
+    await scan(user, screen.getByLabelText('Serial number'), SERIAL)
     const [bad, ...good] = CAVITY_LABELS
-    await user.type(screen.getByLabelText(bad), 'XOUT')
+    await scan(user, screen.getByLabelText(bad), 'XOUT')
     for (const label of good) {
-      await user.type(screen.getByLabelText(label), `${label}-0001`)
+      await scan(user, screen.getByLabelText(label), `${label}-0001`)
     }
     await user.click(screen.getByRole('button', { name: 'Start Depanel' }))
 
@@ -431,9 +472,9 @@ describe('Station Gate screen (AS3-03)', () => {
     render(<App client={client} />)
 
     await user.selectOptions(screen.getByLabelText('Station'), 'PCB Depaneler')
-    await user.type(screen.getByLabelText('Serial number'), SERIAL)
+    await scan(user, screen.getByLabelText('Serial number'), SERIAL)
     for (const label of CAVITY_LABELS) {
-      await user.type(screen.getByLabelText(label), `${label}-0001`)
+      await scan(user, screen.getByLabelText(label), `${label}-0001`)
     }
     await user.click(screen.getByRole('button', { name: 'Start Depanel' }))
 
@@ -442,48 +483,32 @@ describe('Station Gate screen (AS3-03)', () => {
     expect(screen.queryByRole('button', { name: /^(PASS|FAIL) PCBA/ })).not.toBeInTheDocument()
   }, 15000)
 
-  it('check 13 — a bad cavity shows the hold message and does not start the cut', async () => {
-    const user = userEvent.setup({ delay: null })
-    render(<App client={createFakeStationGateClient()} />)
+  it('check 10 — after PASS for each PCBA, Cure allows each PCBA serial', async () => {
+    const user = await sendPassForEachPcba()
 
-    await user.selectOptions(screen.getByLabelText('Station'), 'PCB Depaneler')
-    await user.type(screen.getByLabelText('Serial number'), SERIAL)
-    const [bad, ...good] = CAVITY_LABELS
-    await user.type(screen.getByLabelText(bad), 'XOUT')
-    for (const label of good) {
-      await user.type(screen.getByLabelText(label), `${label}-0001`)
+    for (const label of CAVITY_LABELS) {
+      await gateCheck(user, 'Curing Oven', `${label}-0001`)
+      await latest().findByText(`${label}-0001`)
+      expect(latest().getByText('Allowed')).toBeInTheDocument()
+      expect(latest().getByText('Curing (CURE)')).toBeInTheDocument()
     }
-    await user.click(screen.getByRole('button', { name: 'Start Depanel' }))
-
-    expect(latest().getByText('Bad cavity. MES stored nothing.')).toBeInTheDocument()
-    expect(screen.queryByText('Depanelling in process')).not.toBeInTheDocument()
-    expect(screen.queryByText(/^Next station:/)).not.toBeInTheDocument()
   }, 15000)
 
-  it('check 16 — Start Depanel on a panel that MES already split shows the refusal and does not start the cut', async () => {
-    const client = createFakeStationGateClient()
-    await client.splitDepanel({
-      panelNumber: SERIAL,
-      equipmentId: 'AEL-01-DEPANEL',
-      equipmentLocalAt: '2026-10-30T08:00:00',
-      cavities: CAVITY_LABELS.map((label, index) => ({
-        slot: ['A1', 'A2', 'B1', 'B2'][index],
-        cavityResult: `${label}-0001`,
-      })),
-    })
-    const user = userEvent.setup({ delay: null })
-    render(<App client={client} />)
-
-    await user.selectOptions(screen.getByLabelText('Station'), 'PCB Depaneler')
-    await user.type(screen.getByLabelText('Serial number'), SERIAL)
-    for (const label of CAVITY_LABELS) {
-      await user.type(screen.getByLabelText(label), `${label}-0001`)
+  it('check 12 — Cure refuses the PCBA that failed at Depanel', async () => {
+    const user = await reachEyeCheck()
+    const [failed, ...passed] = CAVITY_LABELS
+    await user.click(screen.getByRole('button', { name: `FAIL ${failed}` }))
+    for (const label of passed) {
+      await user.click(screen.getByRole('button', { name: `PASS ${label}` }))
     }
-    await user.click(screen.getByRole('button', { name: 'Start Depanel' }))
+    await user.click(screen.getByRole('button', { name: 'Send Depanel Results' }))
+    await screen.findAllByText(/^Next station:/)
 
-    expect(latest().getByText('This panel is already split. MES stored nothing.')).toBeInTheDocument()
-    expect(screen.queryByText('Depanelling in process')).not.toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /^(PASS|FAIL) PCBA/ })).not.toBeInTheDocument()
+    await gateCheck(user, 'Curing Oven', `${failed}-0001`)
+
+    expect(await latest().findByText('Denied')).toBeInTheDocument()
+    expect(latest().getByText('Wrong station for this serial — skip-ahead blocked')).toBeInTheDocument()
+    expect(latest().getByText('Depanel (DEPANEL)')).toBeInTheDocument()
   }, 15000)
 
   it('check 14 — a new panel number clears the previous panel at PCB Depaneler', async () => {
@@ -507,7 +532,7 @@ describe('Station Gate screen (AS3-03)', () => {
     await user.selectOptions(screen.getByLabelText('Station'), 'PCB Depaneler')
 
     for (const label of CAVITY_LABELS) {
-      await user.type(screen.getByLabelText(label), `${label}-0002`)
+      await scan(user, screen.getByLabelText(label), `${label}-0002`)
     }
 
     expect(screen.queryByRole('button', { name: 'Send Depanel Results' })).not.toBeInTheDocument()
@@ -519,7 +544,7 @@ describe('Station Gate screen (AS3-03)', () => {
     render(<App client={createFakeStationGateClient()} />)
     const box = screen.getByLabelText('Serial number')
 
-    await user.type(box, SERIAL)
+    await scan(user, box, SERIAL)
     for (const station of ['Conformal Coating Machine', 'UV Inspection Machine', 'PCB Depaneler']) {
       await user.selectOptions(screen.getByLabelText('Station'), station)
       expect(box).toHaveValue(SERIAL)
@@ -528,7 +553,7 @@ describe('Station Gate screen (AS3-03)', () => {
     await user.selectOptions(screen.getByLabelText('Station'), 'Curing Oven')
     expect(box).toHaveValue('')
 
-    await user.type(box, 'PCBA-A1-0001')
+    await scan(user, box, 'PCBA-A1-0001')
     await user.selectOptions(screen.getByLabelText('Station'), 'Assembly Station')
     expect(box).toHaveValue('')
   }, 15000)
@@ -537,8 +562,7 @@ describe('Station Gate screen (AS3-03)', () => {
     const user = await sendPassForEachPcba()
 
     const box = screen.getByLabelText('Serial number')
-    await user.clear(box)
-    await user.type(box, 'PANEL-DEMO-002')
+    await scan(user, box, 'PANEL-DEMO-002')
     await user.tab()
 
     for (const label of CAVITY_LABELS) {

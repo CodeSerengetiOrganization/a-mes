@@ -96,7 +96,8 @@ function App({ client }: AppProps) {
   function handleCheck(event: FormEvent) {
     event.preventDefault()
     finishPanelScan()
-    if (!serial) {
+    // Enter still submits the form at PCB Depaneler, where the serial box holds the panel number.
+    if (isDepanel || !serial) {
       return
     }
     void run('Check', () => client.checkGate({ serialNumber: serial, equipmentId }))
@@ -167,6 +168,9 @@ function App({ client }: AppProps) {
   }
 
   function handleOutcome(outcome: Outcome) {
+    if (isDepanel) {
+      return
+    }
     const request = {
       serialNumber: serial,
       equipmentId,
@@ -300,7 +304,7 @@ function App({ client }: AppProps) {
               Send Depanel Results
             </button>
           ) : null}
-          {checkAllowed
+          {checkAllowed && !isDepanel
             ? outcomesFor(station.stationClass).map((outcome) => (
                 <button
                   key={outcome}
