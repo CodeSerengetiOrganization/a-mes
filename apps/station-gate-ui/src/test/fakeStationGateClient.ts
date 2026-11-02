@@ -1,4 +1,6 @@
 import type {
+  DepanelSplitRequest,
+  DepanelSplitResponse,
   GateCheckRequest,
   QualityResultRequest,
   StationCompleteRequest,
@@ -34,8 +36,8 @@ const EQUIPMENT_TO_OP: Record<string, string> = {
   'AEL-01-PACK': 'PACK',
 }
 
-const THROUGH_OPS = new Set(['COAT', 'DEPANEL', 'CURE', 'ASM', 'PACK'])
-const QUALITY_OPS = new Set(['UV', 'COLD_EOL', 'HOT_EOL', 'AMBIENT_EOL'])
+const THROUGH_OPS = new Set(['COAT', 'CURE', 'ASM', 'PACK'])
+const QUALITY_OPS = new Set(['UV', 'DEPANEL', 'COLD_EOL', 'HOT_EOL', 'AMBIENT_EOL'])
 
 export interface FakeClientOptions {
   /** Ops already done per serial, beyond LOADER (which the join satisfies). */
@@ -45,13 +47,15 @@ export interface FakeClientOptions {
 type Kind = 'check' | 'complete' | 'quality'
 
 export function createFakeStationGateClient(options: FakeClientOptions = {}): StationGateClient {
+  const joins = new Map(Object.entries(DEMO_JOINS))
+  const splitPanels = new Set<string>()
   const done = new Map<string, Set<string>>()
-  for (const serial of Object.keys(DEMO_JOINS)) {
+  for (const serial of joins.keys()) {
     done.set(serial, new Set(['LOADER', ...(options.completedOps?.[serial] ?? [])]))
   }
 
   function expectedNext(serial: string): string | null {
-    const join = DEMO_JOINS[serial]
+    const join = joins.get(serial)!
     const completed = done.get(serial)!
     return PROCESS_PATH_OPS[join.processPathId].find((op) => !completed.has(op)) ?? null
   }
@@ -63,7 +67,7 @@ export function createFakeStationGateClient(options: FakeClientOptions = {}): St
       throw new Error(`Unknown equipmentId: ${request.equipmentId}`)
     }
 
-    const join = DEMO_JOINS[serial]
+    const join = joins.get(serial)
     if (!join) {
       return deny(null, null, thisOp, 'ORPHAN', null, 'Serial not joined to a work order')
     }
@@ -119,7 +123,45 @@ export function createFakeStationGateClient(options: FakeClientOptions = {}): St
       }
       return { ...response, expectedNext: expectedNext(serial), outcome: request.outcome }
     },
+    async splitDepanel(request: DepanelSplitRequest) {
+      const panelNumber = request.panelNumber.trim()
+      const panelJoin = joins.get(panelNumber)
+      if (!panelJoin) {
+        return refuseSplit(panelNumber, 'ORPHAN', 'Panel is not on a work order. MES stored nothing.')
+      }
+      if (splitPanels.has(panelNumber)) {
+        return refuseSplit(panelNumber, 'ALREADY_COMPLETE', 'This panel is already split. MES stored nothing.')
+      }
+      const serials = request.cavities.map((cavity) => cavity.cavityResult.trim())
+      if (serials.some((serial) => !isPcbaSerial(serial)) || new Set(serials).size !== serials.length) {
+        return refuseSplit(panelNumber, 'HOLD', 'Bad cavity. MES stored nothing.')
+      }
+
+      splitPanels.add(panelNumber)
+      const ops = PROCESS_PATH_OPS[panelJoin.processPathId]
+      const beforeDepanel = ops.slice(0, ops.indexOf('DEPANEL'))
+      for (const serial of serials) {
+        joins.set(serial, panelJoin)
+        done.set(serial, new Set(beforeDepanel))
+      }
+      return {
+        stored: true,
+        panelNumber,
+        reasonCode: null,
+        message: null,
+        outcome: 'COMPLETE',
+      }
+    },
   }
+}
+
+/** Same shape as DepanelSplitService: XOUT, EMPTY, and UNREADABLE fail this too, because they do not start with PCBA. */
+function isPcbaSerial(serial: string): boolean {
+  return serial.startsWith('PCBA') && serial.length >= 10 && serial.length <= 64
+}
+
+function refuseSplit(panelNumber: string, reasonCode: string, message: string): DepanelSplitResponse {
+  return { stored: false, panelNumber, reasonCode, message, outcome: null }
 }
 
 function deny(

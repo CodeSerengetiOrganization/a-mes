@@ -15,7 +15,7 @@ export interface Station {
 export const STATIONS: readonly Station[] = [
   { equipmentId: 'AEL-01-COAT', label: 'Conformal Coating Machine', stationClass: 'through' },
   { equipmentId: 'AEL-01-UV', label: 'UV Inspection Machine', stationClass: 'quality' },
-  { equipmentId: 'AEL-01-DEPANEL', label: 'PCB Depaneler', stationClass: 'through' },
+  { equipmentId: 'AEL-01-DEPANEL', label: 'PCB Depaneler', stationClass: 'quality' },
   { equipmentId: 'AEL-01-CURE', label: 'Curing Oven', stationClass: 'through' },
   { equipmentId: 'AEL-01-ASM', label: 'Assembly Station', stationClass: 'through' },
   { equipmentId: 'AEL-01-COLD-EOL', label: 'Cold EOL Tester', stationClass: 'quality' },
@@ -44,6 +44,13 @@ export function opLabel(opCode: string): string {
 
 export function findStation(equipmentId: string): Station | undefined {
   return STATIONS.find((station) => station.equipmentId === equipmentId)
+}
+
+const CURE_INDEX = STATIONS.findIndex((station) => station.equipmentId === 'AEL-01-CURE')
+
+/** Cure and every station after it scan the PCBA serial, not the panel number. Relies on STATIONS being in line order. */
+export function isAtOrAfterCure(equipmentId: string): boolean {
+  return STATIONS.findIndex((station) => station.equipmentId === equipmentId) >= CURE_INDEX
 }
 
 export function outcomesFor(stationClass: StationClass): Outcome[] {

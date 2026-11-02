@@ -79,6 +79,24 @@
   cursor: not-allowed;
 }
 
+.cavity-results {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.cavity-next {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--text-h);
+}
+
+.depanel-status {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-weight: 600;
+  color: var(--text-h);
+}
+
 .button.complete,
 .button.pass {
   border-color: #6ee7b7;
@@ -90,6 +108,16 @@
   border-color: #fca5a5;
   background: #fef2f2;
   color: #991b1b;
+}
+
+.button.pass[aria-pressed='true'] {
+  background: #059669;
+  color: #ffffff;
+}
+
+.button.fail[aria-pressed='true'] {
+  background: #dc2626;
+  color: #ffffff;
 }
 
 .panels {
