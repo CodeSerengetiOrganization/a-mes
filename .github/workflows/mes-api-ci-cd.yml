@@ -23,6 +23,22 @@ jobs:
       contents: read
       packages: write
 
+    services:
+      mysql:
+        image: mysql:8.0.21
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: ames
+          MYSQL_USER: ames
+          MYSQL_PASSWORD: ci-only
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=12
+
     defaults:
       run:
         working-directory: services/mes-api
@@ -64,6 +80,9 @@ jobs:
         run: mvn clean verify
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MYSQL_HOST: 127.0.0.1
+          MYSQL_PASSWORD: ci-only
+          SPRING_FLYWAY_BASELINE_ON_MIGRATE: "false"
 
       # Step 5: Extract version from pom.xml once and set as workflow environment variable
       - name: Set version from pom.xml
